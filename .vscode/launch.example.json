@@ -1,0 +1,52 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch OPC UA MCP Server (HTTP)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/opcua-mcp.go",
+            "env": {
+                "SERVER_TRANSPORT": "http",
+                "OPCUA_ENDPOINT": "opc.tcp://localhost:4840",
+                "OPCUA_AUTH_MODE": "anonymous"
+            },
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "start-opcua-server",
+            "postDebugTask": "stop-opcua-server"
+        },
+        {
+            "name": "Launch OPC UA MCP Server (STDIO)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/opcua-mcp.go",
+            "env": {
+                "SERVER_TRANSPORT": "stdio",
+                "OPCUA_ENDPOINT": "opc.tcp://localhost:4840",
+                "OPCUA_AUTH_MODE": "anonymous"
+            },
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "start-opcua-server",
+            "postDebugTask": "stop-opcua-server"
+        },
+        {
+            "name": "Launch OPC UA MCP Server (HTTP with Auth)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/opcua-mcp.go",
+            "env": {
+                "SERVER_TRANSPORT": "http",
+                "OPCUA_ENDPOINT": "opc.tcp://localhost:4840",
+                "OPCUA_AUTH_MODE": "username",
+                "OPCUA_USERNAME": "admin",
+                "OPCUA_PASSWORD": "secret"
+            },
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "start-opcua-server",
+            "postDebugTask": "stop-opcua-server"
+        }
+    ]
+}

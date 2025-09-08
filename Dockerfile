@@ -1,0 +1,31 @@
+FROM cgr.dev/chainguard/go AS builder
+WORKDIR /build
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o opcua-mcp ./cmd/opcua-mcp.go
+
+FROM scratch
+WORKDIR /
+COPY --from=builder /build/opcua-mcp /
+
+# Default environment variables
+ENV SERVER_TRANSPORT=stdio
+ENV SERVER_HTTP_PORT=8080
+ENV SERVER_LOG_LEVEL=info
+ENV OPCUA_ENDPOINT=opc.tcp://localhost:4840
+ENV OPCUA_AUTH_MODE=anonymous
+ENV OPCUA_SECURITY_POLICY=None
+ENV OPCUA_SECURITY_MODE=None
+ENV OPCUA_REQUEST_TIMEOUT=30s
+ENV OPCUA_SESSION_TIMEOUT=60s
+ENV OPCUA_MAX_RETRIES=3
+ENV OPCUA_RETRY_DELAY=1s
+ENV MCP_NAME="OPC-UA MCP Server"
+ENV MCP_VERSION=1.0.0
+ENV MCP_ENABLE_TOOLS=true
+ENV MCP_ENABLE_RESOURCES=true
+ENV MCP_ENABLE_PROMPTS=false
+ENV MCP_HTTP_PATH=/mcp
+
+ENTRYPOINT ["/opcua-mcp"]
