@@ -64,7 +64,7 @@ docker run -p 8080:8080 opcua-mcp
 
 ## Configuration
 
-The server is configured using environment variables with the following structure:
+The server is configured using environment variables with the following structure. All configuration is loaded using the [caarlos0/env](https://github.com/caarlos0/env) library, which provides automatic parsing and validation.
 
 ### Server Configuration
 
@@ -72,7 +72,11 @@ The server is configured using environment variables with the following structur
 |----------|---------|-------------|
 | `SERVER_TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `SERVER_HTTP_PORT` | `8080` | HTTP port for streamable-http mode |
-| `SERVER_LOG_LEVEL` | `info` | Log level |
+| `SERVER_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `SERVER_LOG_FORMAT` | `json` | Log format: `json` or `text` |
+| `SERVER_LOG_OUTPUT` | `stdout` | Log output: `stdout`, `stderr`, or `file` |
+| `SERVER_LOG_FILE` | - | Log file path (required if `LOG_OUTPUT=file`) |
+| `SERVER_LOG_ADD_SOURCE` | `false` | Add source file/line info to logs |
 
 ### OPC-UA Configuration
 
@@ -80,17 +84,17 @@ The server is configured using environment variables with the following structur
 |----------|---------|-------------|
 | `OPCUA_ENDPOINT` | `opc.tcp://localhost:4840` | OPC-UA server endpoint |
 | `OPCUA_AUTH_MODE` | `anonymous` | Authentication mode: `anonymous`, `username`, `certificate` |
-| `OPCUA_USERNAME` | - | Username for username authentication |
-| `OPCUA_PASSWORD` | - | Password for username authentication |
-| `OPCUA_CERT_FILE` | - | Client certificate file path |
-| `OPCUA_KEY_FILE` | - | Client private key file path |
+| `OPCUA_USERNAME` | - | Username for username authentication (required if `AUTH_MODE=username`) |
+| `OPCUA_PASSWORD` | - | Password for username authentication (required if `AUTH_MODE=username`) |
+| `OPCUA_CERT_FILE` | - | Client certificate file path (required if `AUTH_MODE=certificate`) |
+| `OPCUA_KEY_FILE` | - | Client private key file path (required if `AUTH_MODE=certificate`) |
 | `OPCUA_SERVER_CERT` | - | Server certificate file path |
-| `OPCUA_SECURITY_POLICY` | `None` | Security policy |
-| `OPCUA_SECURITY_MODE` | `None` | Security mode |
-| `OPCUA_REQUEST_TIMEOUT` | `30s` | Request timeout |
-| `OPCUA_SESSION_TIMEOUT` | `60s` | Session timeout |
+| `OPCUA_SECURITY_POLICY` | `None` | Security policy: `None`, `Basic128Rsa15`, `Basic256`, `Basic256Sha256`, `Aes128_Sha256_RsaOaep` |
+| `OPCUA_SECURITY_MODE` | `None` | Security mode: `None`, `Sign`, `SignAndEncrypt` |
+| `OPCUA_REQUEST_TIMEOUT` | `30s` | Request timeout (duration format: `30s`, `1m`, etc.) |
+| `OPCUA_SESSION_TIMEOUT` | `60s` | Session timeout (duration format: `60s`, `2m`, etc.) |
 | `OPCUA_MAX_RETRIES` | `3` | Maximum retry attempts |
-| `OPCUA_RETRY_DELAY` | `1s` | Delay between retries |
+| `OPCUA_RETRY_DELAY` | `1s` | Delay between retries (duration format: `1s`, `500ms`, etc.) |
 
 ### MCP Configuration
 
@@ -102,6 +106,102 @@ The server is configured using environment variables with the following structur
 | `MCP_ENABLE_RESOURCES` | `true` | Enable MCP resources |
 | `MCP_ENABLE_PROMPTS` | `false` | Enable MCP prompts |
 | `MCP_HTTP_PATH` | `/mcp` | HTTP endpoint path |
+
+### Search and Discovery Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SEARCH_ENABLE_DISCOVERY` | `true` | Enable automatic node discovery |
+| `SEARCH_DISCOVERY_INTERVAL` | `30s` | Discovery interval (duration format) |
+| `SEARCH_DISCOVERY_ROOT_NODE` | `i=85` | Root node for discovery (Objects folder) |
+| `SEARCH_MAX_DISCOVERY_DEPTH` | `10` | Maximum discovery depth |
+| `SEARCH_MAX_NODES_PER_BROWSE` | `10000` | Maximum nodes per browse operation |
+| `SEARCH_ENABLE_SEARCH` | `true` | Enable search functionality |
+| `SEARCH_INDEX_PATH` | `./search_index` | Search index directory path |
+| `SEARCH_MAX_RESULTS` | `100` | Maximum search results |
+| `SEARCH_MIN_SCORE` | `0.1` | Minimum search score threshold |
+| `SEARCH_ENABLE_CACHE` | `true` | Enable caching |
+| `SEARCH_CACHE_TTL` | `5m` | Cache time-to-live (duration format) |
+| `SEARCH_MAX_CACHE_SIZE` | `10000` | Maximum cache size |
+
+### Configuration Validation
+
+The configuration system includes automatic validation:
+
+- **Transport Mode**: Must be `stdio` or `http`
+- **Authentication Mode**: Must be `anonymous`, `username`, or `certificate`
+- **Security Policy**: Must be one of the supported OPC-UA security policies
+- **Security Mode**: Must be `None`, `Sign`, or `SignAndEncrypt`
+- **Required Fields**: Username/password required for username auth, certificates required for certificate auth
+- **Duration Formats**: Timeout and interval values support Go duration format (`30s`, `1m30s`, `2h`, etc.)
+
+### Environment Variable Examples
+
+#### Development Environment
+
+```bash
+# .env file for development
+SERVER_TRANSPORT=stdio
+SERVER_LOG_LEVEL=debug
+SERVER_LOG_FORMAT=text
+OPCUA_ENDPOINT=opc.tcp://localhost:4840
+OPCUA_AUTH_MODE=anonymous
+SEARCH_ENABLE_DISCOVERY=true
+SEARCH_DISCOVERY_INTERVAL=10s
+SEARCH_MAX_DISCOVERY_DEPTH=5
+```
+
+#### Production Environment
+
+```bash
+# Production configuration
+SERVER_TRANSPORT=http
+SERVER_HTTP_PORT=8080
+SERVER_LOG_LEVEL=info
+SERVER_LOG_FORMAT=json
+SERVER_LOG_OUTPUT=stdout
+OPCUA_ENDPOINT=opc.tcp://production-server:4840
+OPCUA_AUTH_MODE=username
+OPCUA_USERNAME=production_user
+OPCUA_PASSWORD=secure_password
+OPCUA_SECURITY_POLICY=Basic256
+OPCUA_SECURITY_MODE=SignAndEncrypt
+OPCUA_REQUEST_TIMEOUT=60s
+OPCUA_SESSION_TIMEOUT=300s
+OPCUA_MAX_RETRIES=5
+OPCUA_RETRY_DELAY=2s
+SEARCH_ENABLE_DISCOVERY=true
+SEARCH_DISCOVERY_INTERVAL=60s
+SEARCH_MAX_DISCOVERY_DEPTH=15
+SEARCH_MAX_NODES_PER_BROWSE=50000
+SEARCH_ENABLE_CACHE=true
+SEARCH_CACHE_TTL=10m
+SEARCH_MAX_CACHE_SIZE=50000
+```
+
+#### Certificate-based Authentication
+
+```bash
+# Certificate authentication setup
+OPCUA_AUTH_MODE=certificate
+OPCUA_CERT_FILE=/etc/opcua/certs/client.pem
+OPCUA_KEY_FILE=/etc/opcua/certs/client.key
+OPCUA_SERVER_CERT=/etc/opcua/certs/server.pem
+OPCUA_SECURITY_POLICY=Basic256Sha256
+OPCUA_SECURITY_MODE=SignAndEncrypt
+OPCUA_ENDPOINT=opc.tcp://secure-server:4840
+```
+
+### Configuration Best Practices
+
+1. **Environment Separation**: Use different environment files for development, staging, and production
+2. **Secret Management**: Never hardcode passwords or certificates in environment files
+3. **Logging**: Use structured logging (JSON) in production for better observability
+4. **Timeouts**: Set appropriate timeouts based on network conditions and server performance
+5. **Discovery**: Adjust discovery intervals based on OPC-UA server size and update frequency
+6. **Caching**: Enable caching for better performance, adjust TTL based on data volatility
+7. **Security**: Use the highest security policy and mode supported by your OPC-UA server
+8. **Monitoring**: Enable debug logging temporarily for troubleshooting, but use info level in production
 
 ## Usage
 
@@ -333,23 +433,92 @@ GOOS=windows GOARCH=amd64 go build -o opcua-mcp.exe ./cmd/opcua-mcp.go
 
 ## Docker Deployment
 
+The application is containerized using a multi-stage Docker build with Chainguard's minimal Go image for building and a scratch image for the final runtime.
+
+### Docker Image Details
+
+- **Base Image**: `cgr.dev/chainguard/go` (builder stage)
+- **Runtime Image**: `scratch` (minimal, security-focused)
+- **Architecture**: Linux AMD64
+- **Size**: Optimized for minimal footprint
+- **Security**: Uses Chainguard's hardened images
+
 ### Build and Run
+
+#### Basic Usage
 
 ```bash
 # Build image
 docker build -t opcua-mcp .
 
-# Run container
+# Run container in stdio mode (default)
+docker run opcua-mcp
+
+# Run container in HTTP mode
 docker run -p 8080:8080 \
   -e SERVER_TRANSPORT=http \
-  -e OPCUA_ENDPOINT=opc.tcp://server:4840 \
+  opcua-mcp
+```
+
+#### With OPC-UA Server Connection
+
+```bash
+# Anonymous authentication
+docker run -p 8080:8080 \
+  -e SERVER_TRANSPORT=http \
+  -e OPCUA_ENDPOINT=opc.tcp://opcua-server:4840 \
+  -e OPCUA_AUTH_MODE=anonymous \
+  opcua-mcp
+
+# Username/password authentication
+docker run -p 8080:8080 \
+  -e SERVER_TRANSPORT=http \
+  -e OPCUA_ENDPOINT=opc.tcp://opcua-server:4840 \
   -e OPCUA_AUTH_MODE=username \
   -e OPCUA_USERNAME=admin \
   -e OPCUA_PASSWORD=secret \
   opcua-mcp
+
+# Certificate authentication (with volume mounts)
+docker run -p 8080:8080 \
+  -e SERVER_TRANSPORT=http \
+  -e OPCUA_ENDPOINT=opc.tcp://opcua-server:4840 \
+  -e OPCUA_AUTH_MODE=certificate \
+  -e OPCUA_CERT_FILE=/certs/client.pem \
+  -e OPCUA_KEY_FILE=/certs/client.key \
+  -e OPCUA_SERVER_CERT=/certs/server.pem \
+  -e OPCUA_SECURITY_POLICY=Basic256 \
+  -e OPCUA_SECURITY_MODE=SignAndEncrypt \
+  -v /path/to/certs:/certs:ro \
+  opcua-mcp
+```
+
+#### Advanced Configuration
+
+```bash
+# Full configuration example
+docker run -p 8080:8080 \
+  -e SERVER_TRANSPORT=http \
+  -e SERVER_HTTP_PORT=8080 \
+  -e SERVER_LOG_LEVEL=debug \
+  -e SERVER_LOG_FORMAT=json \
+  -e OPCUA_ENDPOINT=opc.tcp://opcua-server:4840 \
+  -e OPCUA_AUTH_MODE=username \
+  -e OPCUA_USERNAME=admin \
+  -e OPCUA_PASSWORD=secret \
+  -e OPCUA_REQUEST_TIMEOUT=60s \
+  -e OPCUA_SESSION_TIMEOUT=120s \
+  -e OPCUA_MAX_RETRIES=5 \
+  -e SEARCH_ENABLE_DISCOVERY=true \
+  -e SEARCH_DISCOVERY_INTERVAL=60s \
+  -e SEARCH_MAX_DISCOVERY_DEPTH=15 \
+  -v ./search_index:/search_index \
+  opcua-mcp
 ```
 
 ### Docker Compose
+
+#### Basic Setup
 
 ```yaml
 version: '3.8'
@@ -364,7 +533,150 @@ services:
       - OPCUA_AUTH_MODE=anonymous
     depends_on:
       - opcua-server
+    volumes:
+      - ./search_index:/search_index
 ```
+
+#### Production Setup with Authentication
+
+```yaml
+version: '3.8'
+services:
+  opcua-mcp:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_TRANSPORT=http
+      - SERVER_LOG_LEVEL=info
+      - SERVER_LOG_FORMAT=json
+      - OPCUA_ENDPOINT=opc.tcp://opcua-server:4840
+      - OPCUA_AUTH_MODE=username
+      - OPCUA_USERNAME=${OPCUA_USERNAME}
+      - OPCUA_PASSWORD=${OPCUA_PASSWORD}
+      - OPCUA_SECURITY_POLICY=Basic256
+      - OPCUA_SECURITY_MODE=SignAndEncrypt
+      - OPCUA_REQUEST_TIMEOUT=30s
+      - OPCUA_SESSION_TIMEOUT=60s
+      - SEARCH_ENABLE_DISCOVERY=true
+      - SEARCH_DISCOVERY_INTERVAL=30s
+      - SEARCH_MAX_DISCOVERY_DEPTH=10
+    depends_on:
+      - opcua-server
+    volumes:
+      - opcua-mcp-search:/search_index
+      - ./certs:/certs:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/mcp"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  opcua-server:
+    image: mcr.microsoft.com/iotedge/opc-plc:latest
+    ports:
+      - "4840:4840"
+    environment:
+      - PLC_SIMULATION_FILE=Boiler1/Boiler1_simulation.json
+    restart: unless-stopped
+
+volumes:
+  opcua-mcp-search:
+```
+
+#### Development Setup with Test Server
+
+```yaml
+version: '3.8'
+services:
+  opcua-mcp:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_TRANSPORT=http
+      - SERVER_LOG_LEVEL=debug
+      - OPCUA_ENDPOINT=opc.tcp://opcua-test-server:4840
+      - OPCUA_AUTH_MODE=anonymous
+      - SEARCH_ENABLE_DISCOVERY=true
+      - SEARCH_DISCOVERY_INTERVAL=10s
+    depends_on:
+      - opcua-test-server
+    volumes:
+      - ./search_index:/search_index
+
+  opcua-test-server:
+    image: mcr.microsoft.com/iotedge/opc-plc:latest
+    ports:
+      - "4840:4840"
+    environment:
+      - PLC_SIMULATION_FILE=Boiler1/Boiler1_simulation.json
+```
+
+### Environment Variables in Docker
+
+The Docker image includes default environment variables that can be overridden:
+
+```dockerfile
+# Default environment variables set in Dockerfile
+ENV SERVER_TRANSPORT=stdio
+ENV SERVER_HTTP_PORT=8080
+ENV SERVER_LOG_LEVEL=info
+ENV OPCUA_ENDPOINT=opc.tcp://localhost:4840
+ENV OPCUA_AUTH_MODE=anonymous
+ENV OPCUA_SECURITY_POLICY=None
+ENV OPCUA_SECURITY_MODE=None
+ENV OPCUA_REQUEST_TIMEOUT=30s
+ENV OPCUA_SESSION_TIMEOUT=60s
+ENV OPCUA_MAX_RETRIES=3
+ENV OPCUA_RETRY_DELAY=1s
+ENV MCP_NAME="OPC-UA MCP Server"
+ENV MCP_VERSION=1.0.0
+ENV MCP_ENABLE_TOOLS=true
+ENV MCP_ENABLE_RESOURCES=true
+ENV MCP_ENABLE_PROMPTS=false
+ENV MCP_HTTP_PATH=/mcp
+```
+
+### Volume Mounts
+
+Common volume mounts for Docker deployment:
+
+```bash
+# Search index persistence
+-v ./search_index:/search_index
+
+# Certificate files (read-only)
+-v /path/to/certs:/certs:ro
+
+# Log files (if using file output)
+-v ./logs:/logs
+
+# Configuration files (if using file-based config)
+-v ./config:/config:ro
+```
+
+### Health Checks
+
+The application supports health checks for container orchestration:
+
+```yaml
+healthcheck:
+  test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/mcp"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+```
+
+### Security Considerations
+
+- **Minimal Base Image**: Uses `scratch` for minimal attack surface
+- **Read-only Certificates**: Mount certificate volumes as read-only
+- **Non-root User**: Consider running as non-root user in production
+- **Network Security**: Use Docker networks for service isolation
+- **Secret Management**: Use Docker secrets or external secret management for sensitive data
 
 ## Security Considerations
 
