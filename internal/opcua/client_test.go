@@ -219,3 +219,168 @@ func TestClientGetServerInfoWhenNotConnected(t *testing.T) {
 		t.Errorf("Expected error '%s', got '%s'", expectedErr, err.Error())
 	}
 }
+
+func TestParseNodeIDs(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+		hasError bool
+	}{
+		{
+			name:     "single numeric node ID",
+			input:    "i=85",
+			expected: []string{"i=85"},
+			hasError: false,
+		},
+		{
+			name:     "single string node ID",
+			input:    "s=Temperature",
+			expected: []string{"s=Temperature"},
+			hasError: false,
+		},
+		{
+			name:     "single GUID node ID",
+			input:    "g=12345678-1234-1234-1234-123456789abc",
+			expected: []string{"g=12345678-1234-1234-1234-123456789abc"},
+			hasError: false,
+		},
+		{
+			name:     "comma-separated node IDs",
+			input:    "i=85,i=86,i=87",
+			expected: []string{"i=85", "i=86", "i=87"},
+			hasError: false,
+		},
+		{
+			name:     "comma-separated with spaces",
+			input:    "i=85, i=86, i=87",
+			expected: []string{"i=85", "i=86", "i=87"},
+			hasError: false,
+		},
+		{
+			name:     "JSON array format",
+			input:    `["i=85","i=86","i=87"]`,
+			expected: []string{"i=85", "i=86", "i=87"},
+			hasError: false,
+		},
+		{
+			name:     "JSON array with spaces",
+			input:    `[ "i=85" , "i=86" , "i=87" ]`,
+			expected: []string{"i=85", "i=86", "i=87"},
+			hasError: false,
+		},
+		{
+			name:     "quoted single node ID",
+			input:    `"i=85"`,
+			expected: []string{"i=85"},
+			hasError: false,
+		},
+		{
+			name:     "quoted comma-separated node IDs",
+			input:    `"i=85","i=86","i=87"`,
+			expected: []string{"i=85", "i=86", "i=87"},
+			hasError: false,
+		},
+		{
+			name:     "mixed node ID types",
+			input:    "i=85,s=Temperature,g=12345678-1234-1234-1234-123456789abc",
+			expected: []string{"i=85", "s=Temperature", "g=12345678-1234-1234-1234-123456789abc"},
+			hasError: false,
+		},
+		{
+			name:     "empty input",
+			input:    "",
+			expected: nil,
+			hasError: true,
+		},
+		{
+			name:     "whitespace only",
+			input:    "   ",
+			expected: nil,
+			hasError: true,
+		},
+		{
+			name:     "string node ID without prefix",
+			input:    "invalid",
+			expected: []string{"invalid"},
+			hasError: false,
+		},
+		{
+			name:     "comma-separated with empty element",
+			input:    "i=85,,i=87",
+			expected: nil,
+			hasError: true,
+		},
+		{
+			name:     "comma-separated with string elements",
+			input:    "i=85,invalid,i=87",
+			expected: []string{"i=85", "invalid", "i=87"},
+			hasError: false,
+		},
+		{
+			name:     "JSON array with empty element",
+			input:    `["i=85","","i=87"]`,
+			expected: nil,
+			hasError: true,
+		},
+		{
+			name:     "JSON array with string elements",
+			input:    `["i=85","invalid","i=87"]`,
+			expected: []string{"i=85", "invalid", "i=87"},
+			hasError: false,
+		},
+		{
+			name:     "malformed JSON",
+			input:    `["i=85","i=86"`,
+			expected: nil,
+			hasError: true,
+		},
+		{
+			name:     "node ID with namespace",
+			input:    "ns=2;i=85",
+			expected: []string{"ns=2;i=85"},
+			hasError: false,
+		},
+		{
+			name:     "multiple namespaced node IDs",
+			input:    "ns=2;i=85,ns=3;s=Temperature",
+			expected: []string{"ns=2;i=85", "ns=3;s=Temperature"},
+			hasError: false,
+		},
+		{
+			name:     "space-separated invalid single node ID",
+			input:    "i=85 i=86 i=87",
+			expected: nil,
+			hasError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ParseNodeIDs(tt.input)
+
+			if tt.hasError {
+				if err == nil {
+					t.Errorf("ParseNodeIDs(%q) expected error, got none", tt.input)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("ParseNodeIDs(%q) unexpected error: %v", tt.input, err)
+				return
+			}
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("ParseNodeIDs(%q) expected %d results, got %d", tt.input, len(tt.expected), len(result))
+				return
+			}
+
+			for i, expected := range tt.expected {
+				if result[i] != expected {
+					t.Errorf("ParseNodeIDs(%q) result[%d] = %q, expected %q", tt.input, i, result[i], expected)
+				}
+			}
+		})
+	}
+}

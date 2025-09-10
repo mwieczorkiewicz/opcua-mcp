@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -59,21 +60,21 @@ func (s *Server) SetupTools() error {
 		mcp.WithDescription("Read values from OPC-UA nodes"),
 		mcp.WithString("node_ids",
 			mcp.Required(),
-			mcp.Description("Comma-separated list of node IDs to read"),
+			mcp.Description("Node IDs to read. Supports multiple formats: single node (i=85), comma-separated (i=85,i=86), or JSON array ([\"i=85\",\"i=86\"])"),
 		),
 	)
 	s.mcpServer.AddTool(readTool, s.handleRead)
 
 	// Write tool
 	writeTool := mcp.NewTool("opcua_write",
-		mcp.WithDescription("Write values to OPC-UA nodes"),
+		mcp.WithDescription("Write values to OPC-UA nodes with automatic type validation. The tool reads the node's data type first and validates that the provided value is compatible before attempting to write."),
 		mcp.WithString("node_id",
 			mcp.Required(),
 			mcp.Description("Node ID to write to"),
 		),
 		mcp.WithString("value",
 			mcp.Required(),
-			mcp.Description("Value to write (JSON format)"),
+			mcp.Description("Value to write (JSON format). Supports: booleans (true/false), integers, floats, strings, arrays, and DateTime values"),
 		),
 	)
 	s.mcpServer.AddTool(writeTool, s.handleWrite)
@@ -205,7 +206,7 @@ func (s *Server) SetupResources() error {
 	nodeResource := mcp.NewResource(
 		"opcua://node/{node_id}",
 		"OPC-UA Node",
-		mcp.WithResourceDescription("Access OPC-UA node data"),
+		mcp.WithResourceDescription("Access OPC-UA node data. Supports single node (opcua://node/i=85) or multiple nodes (opcua://node/i=85,i=86)"),
 		mcp.WithMIMEType("application/json"),
 	)
 	s.mcpServer.AddResource(nodeResource, s.handleNodeResource)
@@ -225,28 +226,62 @@ func (s *Server) SetupResources() error {
 // handleNodeResource handles node resource requests
 func (s *Server) handleNodeResource(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 	// Extract node ID from URI
-	nodeID := req.Params.URI
-	if nodeID == "" {
+	uri := req.Params.URI
+	if uri == "" {
 		return nil, fmt.Errorf("node ID not specified in URI")
 	}
 
-	// Read node value
-	results, err := s.opcuaClient.Read(ctx, []string{nodeID})
+	// Parse the URI to extract node IDs
+	// Expected format: opcua://node/{node_id} or opcua://node/{node_id1,node_id2,...}
+	nodeIDPart := strings.TrimPrefix(uri, "opcua://node/")
+	if nodeIDPart == uri {
+		return nil, fmt.Errorf("invalid URI format, expected opcua://node/{node_id}")
+	}
+
+	// Parse node IDs using the improved parsing function
+	nodeIDs, err := opcua.ParseNodeIDs(nodeIDPart)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read node: %w", err)
+		return nil, fmt.Errorf("failed to parse node IDs from URI: %w", err)
+	}
+
+	// Read node values
+	results, err := s.opcuaClient.Read(ctx, nodeIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read nodes: %w", err)
 	}
 
 	if len(results) == 0 {
 		return nil, fmt.Errorf("no results returned")
 	}
 
-	result := results[0]
-	response := map[string]interface{}{
-		"node_id":          nodeID,
-		"value":            result.Value.Value(),
-		"status":           result.Status,
-		"source_timestamp": result.SourceTimestamp,
-		"server_timestamp": result.ServerTimestamp,
+	// Format response - if multiple nodes, return array; if single node, return object
+	var response interface{}
+	if len(results) == 1 {
+		// Single node response
+		result := results[0]
+		response = map[string]interface{}{
+			"node_id":          nodeIDs[0],
+			"value":            result.Value.Value(),
+			"status":           result.Status,
+			"source_timestamp": result.SourceTimestamp,
+			"server_timestamp": result.ServerTimestamp,
+		}
+	} else {
+		// Multiple nodes response
+		var nodeResults []map[string]interface{}
+		for i, result := range results {
+			nodeResults = append(nodeResults, map[string]interface{}{
+				"node_id":          nodeIDs[i],
+				"value":            result.Value.Value(),
+				"status":           result.Status,
+				"source_timestamp": result.SourceTimestamp,
+				"server_timestamp": result.ServerTimestamp,
+			})
+		}
+		response = map[string]interface{}{
+			"nodes": nodeResults,
+			"count": len(nodeResults),
+		}
 	}
 
 	responseJSON, err := json.MarshalIndent(response, "", "  ")
@@ -309,11 +344,10 @@ func (s *Server) handleRead(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		return mcp.NewToolResultError("node_ids parameter is required"), nil
 	}
 
-	// Parse comma-separated node IDs
-	var nodeIDs []string
-	if err := json.Unmarshal([]byte("["+nodeIDsStr+"]"), &nodeIDs); err != nil {
-		// Try splitting by comma if JSON parsing fails
-		nodeIDs = []string{nodeIDsStr}
+	// Parse node IDs using the improved parsing function
+	nodeIDs, err := opcua.ParseNodeIDs(nodeIDsStr)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to parse node IDs: %v", err)), nil
 	}
 
 	// Read values from OPC-UA server
@@ -342,7 +376,7 @@ func (s *Server) handleRead(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 	return mcp.NewToolResultText(string(responseJSON)), nil
 }
 
-// handleWrite handles the opcua_write tool
+// handleWrite handles the opcua_write tool with enhanced type validation
 func (s *Server) handleWrite(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	nodeID := req.GetString("node_id", "")
 	if nodeID == "" {
@@ -360,12 +394,71 @@ func (s *Server) handleWrite(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		return mcp.NewToolResultError(fmt.Sprintf("Invalid JSON value: %v", err)), nil
 	}
 
-	// Write value to OPC-UA server
-	if err := s.opcuaClient.Write(ctx, nodeID, value); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to write to OPC-UA server: %v", err)), nil
+	// Get node type information for better error reporting
+	typeInfo, err := s.opcuaClient.GetNodeTypeInfo(ctx, nodeID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to get node type information: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("Successfully wrote value to node %s", nodeID)), nil
+	// Write value to OPC-UA server (includes type validation)
+	if err := s.opcuaClient.Write(ctx, nodeID, value); err != nil {
+		// Provide detailed error information including type details
+		errorMsg := fmt.Sprintf("Failed to write to OPC-UA server: %v", err)
+
+		// Add type information to help user understand what went wrong
+		if typeInfo != nil {
+			errorMsg += "\n\nNode type information:"
+			errorMsg += fmt.Sprintf("\n- Data Type ID: %d", typeInfo.DataType.IntID())
+			errorMsg += fmt.Sprintf("\n- Value Rank: %d", typeInfo.ValueRank)
+			errorMsg += fmt.Sprintf("\n- Is Array: %t", typeInfo.IsArray)
+			errorMsg += fmt.Sprintf("\n- Is Scalar: %t", typeInfo.IsScalar)
+			errorMsg += fmt.Sprintf("\n- Access Level: %d", typeInfo.AccessLevel)
+			errorMsg += fmt.Sprintf("\n- User Access Level: %d", typeInfo.UserAccessLevel)
+			errorMsg += fmt.Sprintf("\n- Is Writable: %t", typeInfo.IsWritable)
+			errorMsg += fmt.Sprintf("\n- Is User Writable: %t", typeInfo.IsUserWritable)
+
+			if len(typeInfo.ArrayDimensions) > 0 {
+				errorMsg += fmt.Sprintf("\n- Array Dimensions: %v", typeInfo.ArrayDimensions)
+			}
+
+			// Add helpful hints based on the data type
+			switch typeInfo.DataType.IntID() {
+			case 1:
+				errorMsg += "\n\nHint: This node expects a boolean value (true/false)"
+			case 2, 3, 4, 5, 6, 7, 8, 9:
+				errorMsg += "\n\nHint: This node expects an integer value"
+			case 10, 11:
+				errorMsg += "\n\nHint: This node expects a floating-point number"
+			case 12:
+				errorMsg += "\n\nHint: This node expects a string value"
+			case 13:
+				errorMsg += "\n\nHint: This node expects a DateTime value (string or number)"
+			}
+
+			// Add writability hint
+			if !typeInfo.IsUserWritable {
+				errorMsg += "\n\nNote: This node is not writable for the current user"
+			}
+		}
+
+		return mcp.NewToolResultError(errorMsg), nil
+	}
+
+	// Success response with type information
+	successMsg := fmt.Sprintf("Successfully wrote value to node %s", nodeID)
+	if typeInfo != nil {
+		successMsg += "\n\nType information:"
+		successMsg += fmt.Sprintf("\n- Data Type ID: %d", typeInfo.DataType.IntID())
+		successMsg += fmt.Sprintf("\n- Value Rank: %d", typeInfo.ValueRank)
+		successMsg += fmt.Sprintf("\n- Is Array: %t", typeInfo.IsArray)
+		successMsg += fmt.Sprintf("\n- Is Scalar: %t", typeInfo.IsScalar)
+		successMsg += fmt.Sprintf("\n- Access Level: %d", typeInfo.AccessLevel)
+		successMsg += fmt.Sprintf("\n- User Access Level: %d", typeInfo.UserAccessLevel)
+		successMsg += fmt.Sprintf("\n- Is Writable: %t", typeInfo.IsWritable)
+		successMsg += fmt.Sprintf("\n- Is User Writable: %t", typeInfo.IsUserWritable)
+	}
+
+	return mcp.NewToolResultText(successMsg), nil
 }
 
 // handleBrowse handles the opcua_browse tool
@@ -435,36 +528,72 @@ func (s *Server) handleNodeInfo(ctx context.Context, req mcp.CallToolRequest) (*
 	return mcp.NewToolResultText(string(responseJSON)), nil
 }
 
+const serverStatusNode = "i=2256"
+
 // handleServerInfo handles the opcua_server_info tool
 func (s *Server) handleServerInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Get server information
 	serverStatus, err := s.opcuaClient.GetServerInfo(ctx)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to get server info: %v", err)), nil
+		return s.handleServerInfoFallback(ctx, err)
 	}
 
-	// Format response
+	response := s.formatServerStatusResponse(serverStatus, "get_server_info")
+	return s.marshalResponse(response)
+}
+
+func (s *Server) handleServerInfoFallback(ctx context.Context, primaryErr error) (*mcp.CallToolResult, error) {
+	results, err := s.opcuaClient.Read(ctx, []string{serverStatusNode})
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to get server info: %v (fallback also failed: %v)", primaryErr, err)), nil
+	}
+
+	if len(results) == 0 {
+		return mcp.NewToolResultError("No server status data returned from fallback"), nil
+	}
+
+	result := results[0]
+	if result.Status != ua.StatusOK {
+		return mcp.NewToolResultError(fmt.Sprintf("Server status read failed: %s", result.Status)), nil
+	}
+
+	response := map[string]interface{}{
+		"node_id":          serverStatusNode,
+		"server_status":    result.Value.Value(),
+		"source_timestamp": result.SourceTimestamp,
+		"server_timestamp": result.ServerTimestamp,
+		"status":           result.Status,
+		"method":           "fallback_read",
+	}
+
+	return s.marshalResponse(response)
+}
+
+func (s *Server) formatServerStatusResponse(serverStatus *ua.ServerStatusDataType, method string) map[string]interface{} {
 	response := map[string]interface{}{
 		"start_time":   serverStatus.StartTime,
 		"current_time": serverStatus.CurrentTime,
 		"state":        serverStatus.State.String(),
+		"method":       method,
 	}
 
-	// Add build info if available
 	if serverStatus.BuildInfo != nil {
-		response["product_uri"] = serverStatus.BuildInfo.ProductURI
-		response["manufacturer"] = serverStatus.BuildInfo.ManufacturerName
-		response["product_name"] = serverStatus.BuildInfo.ProductName
-		response["software_version"] = serverStatus.BuildInfo.SoftwareVersion
-		response["build_number"] = serverStatus.BuildInfo.BuildNumber
-		response["build_date"] = serverStatus.BuildInfo.BuildDate
+		buildInfo := serverStatus.BuildInfo
+		response["product_uri"] = buildInfo.ProductURI
+		response["manufacturer"] = buildInfo.ManufacturerName
+		response["product_name"] = buildInfo.ProductName
+		response["software_version"] = buildInfo.SoftwareVersion
+		response["build_number"] = buildInfo.BuildNumber
+		response["build_date"] = buildInfo.BuildDate
 	}
 
+	return response
+}
+
+func (s *Server) marshalResponse(response map[string]interface{}) (*mcp.CallToolResult, error) {
 	responseJSON, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal response: %v", err)), nil
 	}
-
 	return mcp.NewToolResultText(string(responseJSON)), nil
 }
 
