@@ -12,6 +12,7 @@ import (
 	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/ua"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/config"
+	"github.com/mwieczorkiewicz/opcua-mcp/internal/logger"
 )
 
 // Client wraps the OPC-UA client with additional functionality
@@ -246,7 +247,7 @@ func (c *Client) Read(ctx context.Context, nodeIDs []string) ([]*ua.DataValue, e
 	return resp.Results, nil
 }
 
-// Write writes values to the specified node IDs with type validation
+// Write writes values to the specified node IDs with intelligent type conversion
 func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) error {
 	if !c.IsConnected() {
 		return fmt.Errorf("client is not connected")
@@ -258,13 +259,29 @@ func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) er
 		return fmt.Errorf("invalid node ID %s: %w", nodeID, err)
 	}
 
-	// Validate value against node's data type before attempting to write
-	if err := c.ValidateValueForNode(ctx, nodeID, value); err != nil {
-		return fmt.Errorf("type validation failed: %w", err)
+	// Get node type information for intelligent conversion
+	typeInfo, err := c.GetNodeTypeInfo(ctx, nodeID)
+	if err != nil {
+		// If we can't get type info, fall back to basic conversion
+		logger.Warn("Failed to get node type information, using basic conversion", "error", err)
+		return c.writeWithBasicConversion(ctx, id, nodeID, value)
 	}
 
-	// Convert value to ua.Variant
-	variant, err := ua.NewVariant(value)
+	// Validate value against node's data type before attempting to write
+	if err := c.ValidateValueForNode(ctx, nodeID, value); err != nil {
+		// Log the validation error but continue with the write attempt
+		// This allows writes to nodes that don't support all type information attributes
+		logger.Warn("Type validation failed", "error", err)
+	}
+
+	// Convert value to proper OPC-UA type based on node's data type
+	convertedValue, err := c.convertValueToOPCUAType(value, typeInfo)
+	if err != nil {
+		return fmt.Errorf("failed to convert value to OPC-UA type: %w", err)
+	}
+
+	// Convert converted value to ua.Variant
+	variant, err := ua.NewVariant(convertedValue)
 	if err != nil {
 		return fmt.Errorf("failed to convert value to variant: %w", err)
 	}
@@ -276,7 +293,8 @@ func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) er
 				NodeID:      id,
 				AttributeID: ua.AttributeIDValue,
 				Value: &ua.DataValue{
-					Value: variant,
+					Value:        variant,
+					EncodingMask: ua.DataValueValue,
 				},
 			},
 		},
@@ -747,10 +765,11 @@ func (c *Client) GetNodeTypeInfo(ctx context.Context, nodeID string) (*NodeTypeI
 		return nil, fmt.Errorf("failed to get value rank: %w", err)
 	}
 
-	// Get array dimensions
+	// Get array dimensions (optional - some nodes don't support this attribute)
 	arrayDimensions, err := c.GetNodeArrayDimensions(ctx, nodeID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get array dimensions: %w", err)
+		// Array dimensions are optional for some nodes, continue with empty slice
+		arrayDimensions = []uint32{}
 	}
 
 	// Get access levels
@@ -808,84 +827,84 @@ func (c *Client) validateScalarValue(value interface{}, typeInfo *NodeTypeInfo) 
 
 	// Validate based on common OPC-UA data types
 	switch dataTypeID {
-	case 1: // Boolean
+	case uint32(ua.TypeIDBoolean): // Boolean
 		if _, ok := value.(bool); !ok {
 			return fmt.Errorf("expected boolean value, got %T", value)
 		}
-	case 2: // SByte
+	case uint32(ua.TypeIDSByte): // SByte
 		if !c.isIntegerType(value) {
 			return fmt.Errorf("expected integer value for SByte, got %T", value)
 		}
 		if !c.isInRange(value, -128, 127) {
 			return fmt.Errorf("SByte value out of range (-128 to 127)")
 		}
-	case 3: // Byte
+	case uint32(ua.TypeIDByte): // Byte
 		if !c.isIntegerType(value) {
 			return fmt.Errorf("expected integer value for Byte, got %T", value)
 		}
 		if !c.isInRange(value, 0, 255) {
 			return fmt.Errorf("Byte value out of range (0 to 255)")
 		}
-	case 4: // Int16
+	case uint32(ua.TypeIDInt16): // Int16
 		if !c.isIntegerType(value) {
 			return fmt.Errorf("expected integer value for Int16, got %T", value)
 		}
 		if !c.isInRange(value, -32768, 32767) {
 			return fmt.Errorf("Int16 value out of range (-32768 to 32767)")
 		}
-	case 5: // UInt16
+	case uint32(ua.TypeIDUint16): // UInt16
 		if !c.isIntegerType(value) {
 			return fmt.Errorf("expected integer value for UInt16, got %T", value)
 		}
 		if !c.isInRange(value, 0, 65535) {
 			return fmt.Errorf("UInt16 value out of range (0 to 65535)")
 		}
-	case 6: // Int32
+	case uint32(ua.TypeIDInt32): // Int32
 		if !c.isIntegerType(value) {
 			return fmt.Errorf("expected integer value for Int32, got %T", value)
 		}
 		if !c.isInRange(value, -2147483648, 2147483647) {
 			return fmt.Errorf("Int32 value out of range (-2147483648 to 2147483647)")
 		}
-	case 7: // UInt32
+	case uint32(ua.TypeIDUint32): // UInt32
 		if !c.isIntegerType(value) {
 			return fmt.Errorf("expected integer value for UInt32, got %T", value)
 		}
 		if !c.isInRange(value, 0, 4294967295) {
 			return fmt.Errorf("UInt32 value out of range (0 to 4294967295)")
 		}
-	case 8: // Int64
+	case uint32(ua.TypeIDInt64): // Int64
 		if !c.isIntegerType(value) {
 			return fmt.Errorf("expected integer value for Int64, got %T", value)
 		}
-	case 9: // UInt64
+	case uint32(ua.TypeIDUint64): // UInt64
 		if !c.isIntegerType(value) {
 			return fmt.Errorf("expected integer value for UInt64, got %T", value)
 		}
 		if !c.isNonNegative(value) {
 			return fmt.Errorf("UInt64 value must be non-negative")
 		}
-	case 10: // Float
+	case uint32(ua.TypeIDFloat): // Float
 		if !c.isFloatType(value) {
 			return fmt.Errorf("expected float value, got %T", value)
 		}
-	case 11: // Double
+	case uint32(ua.TypeIDDouble): // Double
 		if !c.isFloatType(value) {
 			return fmt.Errorf("expected float value, got %T", value)
 		}
-	case 12: // String
+	case uint32(ua.TypeIDString): // String
 		if _, ok := value.(string); !ok {
 			return fmt.Errorf("expected string value, got %T", value)
 		}
-	case 13: // DateTime
+	case uint32(ua.TypeIDDateTime): // DateTime
 		if !c.isDateTimeType(value) {
 			return fmt.Errorf("expected DateTime value (string or number), got %T", value)
 		}
-	case 14: // Guid
+	case uint32(ua.TypeIDGUID): // Guid
 		if _, ok := value.(string); !ok {
 			return fmt.Errorf("expected string value for Guid, got %T", value)
 		}
-	case 15: // ByteString
+	case uint32(ua.TypeIDByteString): // ByteString
 		if _, ok := value.(string); !ok {
 			return fmt.Errorf("expected string value for ByteString, got %T", value)
 		}
@@ -1000,4 +1019,623 @@ func (c *Client) isNonNegative(value interface{}) bool {
 	default:
 		return false
 	}
+}
+
+// writeWithBasicConversion performs a write operation using basic type conversion (fallback)
+func (c *Client) writeWithBasicConversion(ctx context.Context, id *ua.NodeID, nodeID string, value interface{}) error {
+	// Convert value to ua.Variant using basic conversion
+	variant, err := ua.NewVariant(value)
+	if err != nil {
+		return fmt.Errorf("failed to convert value to variant: %w", err)
+	}
+
+	// Create write request
+	req := &ua.WriteRequest{
+		NodesToWrite: []*ua.WriteValue{
+			{
+				NodeID:      id,
+				AttributeID: ua.AttributeIDValue,
+				Value: &ua.DataValue{
+					Value:        variant,
+					EncodingMask: ua.DataValueValue,
+				},
+			},
+		},
+	}
+
+	// Send write request
+	resp, err := c.client.Write(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to write to OPC-UA server: %w", err)
+	}
+
+	// Check for errors in response
+	if len(resp.Results) > 0 && resp.Results[0] != ua.StatusOK {
+		return fmt.Errorf("write failed for node %s: %s", nodeID, resp.Results[0])
+	}
+
+	return nil
+}
+
+// convertValueToOPCUAType converts a value to the proper OPC-UA type based on node type information
+func (c *Client) convertValueToOPCUAType(value interface{}, typeInfo *NodeTypeInfo) (interface{}, error) {
+	// Get the data type identifier
+	dataTypeID := typeInfo.DataType.IntID()
+
+	// Handle arrays
+	if typeInfo.IsArray {
+		return c.convertArrayValue(value, typeInfo, dataTypeID)
+	}
+
+	// Handle scalar values
+	return c.convertScalarValue(value, dataTypeID)
+}
+
+// convertScalarValue converts a scalar value to the proper OPC-UA type
+func (c *Client) convertScalarValue(value interface{}, dataTypeID uint32) (interface{}, error) {
+	switch dataTypeID {
+	case uint32(ua.TypeIDBoolean): // Boolean
+		return c.convertToBoolean(value)
+	case uint32(ua.TypeIDSByte): // SByte
+		return c.convertToSByte(value)
+	case uint32(ua.TypeIDByte): // Byte
+		return c.convertToByte(value)
+	case uint32(ua.TypeIDInt16): // Int16
+		return c.convertToInt16(value)
+	case uint32(ua.TypeIDUint16): // UInt16
+		return c.convertToUInt16(value)
+	case uint32(ua.TypeIDInt32): // Int32
+		return c.convertToInt32(value)
+	case uint32(ua.TypeIDUint32): // UInt32
+		return c.convertToUInt32(value)
+	case uint32(ua.TypeIDInt64): // Int64
+		return c.convertToInt64(value)
+	case uint32(ua.TypeIDUint64): // UInt64
+		return c.convertToUInt64(value)
+	case uint32(ua.TypeIDFloat): // Float
+		return c.convertToFloat(value)
+	case uint32(ua.TypeIDDouble): // Double
+		return c.convertToDouble(value)
+	case uint32(ua.TypeIDString): // String
+		return c.convertToString(value)
+	case uint32(ua.TypeIDDateTime): // DateTime
+		return c.convertToDateTime(value)
+	case uint32(ua.TypeIDGUID): // Guid
+		return c.convertToString(value) // Guid is represented as string
+	case uint32(ua.TypeIDByteString): // ByteString
+		return c.convertToString(value) // ByteString is represented as string
+	default:
+		// For unknown data types, return the original value
+		logger.Warn("Unknown data type, using original value", "dataTypeID", dataTypeID)
+		return value, nil
+	}
+}
+
+// convertArrayValue converts an array value to the proper OPC-UA type
+func (c *Client) convertArrayValue(value interface{}, typeInfo *NodeTypeInfo, dataTypeID uint32) (interface{}, error) {
+	// Check if value is a slice/array
+	valueSlice, ok := value.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("expected array value, got %T", value)
+	}
+
+	// Convert each element in the array
+	convertedArray := make([]interface{}, len(valueSlice))
+	for i, element := range valueSlice {
+		convertedElement, err := c.convertScalarValue(element, dataTypeID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert array element %d: %w", i, err)
+		}
+		convertedArray[i] = convertedElement
+	}
+
+	return convertedArray, nil
+}
+
+// Type conversion helper functions
+func (c *Client) convertToBoolean(value interface{}) (bool, error) {
+	switch v := value.(type) {
+	case bool:
+		return v, nil
+	case string:
+		switch strings.ToLower(v) {
+		case "true", "1", "yes", "on":
+			return true, nil
+		case "false", "0", "no", "off":
+			return false, nil
+		default:
+			return false, fmt.Errorf("invalid boolean string: %s", v)
+		}
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return c.toInt64(v) != 0, nil
+	case float32, float64:
+		return c.toFloat64(v) != 0, nil
+	default:
+		return false, fmt.Errorf("cannot convert %T to boolean", value)
+	}
+}
+
+func (c *Client) convertToSByte(value interface{}) (int8, error) {
+	switch v := value.(type) {
+	case int8:
+		return v, nil
+	case int, int16, int32, int64:
+		val := c.toInt64(v)
+		if val < -128 || val > 127 {
+			return 0, fmt.Errorf("value %d out of range for SByte (-128 to 127)", val)
+		}
+		return int8(val), nil
+	case uint, uint8, uint16, uint32, uint64:
+		val := c.toUInt64(v)
+		if val > 127 {
+			return 0, fmt.Errorf("value %d out of range for SByte (-128 to 127)", val)
+		}
+		return int8(val), nil
+	case float32, float64:
+		val := int64(c.toFloat64(v))
+		if val < -128 || val > 127 {
+			return 0, fmt.Errorf("value %d out of range for SByte (-128 to 127)", val)
+		}
+		return int8(val), nil
+	case string:
+		val, err := c.parseStringToInt64(v)
+		if err != nil {
+			return 0, err
+		}
+		if val < -128 || val > 127 {
+			return 0, fmt.Errorf("value %d out of range for SByte (-128 to 127)", val)
+		}
+		return int8(val), nil
+	default:
+		return 0, fmt.Errorf("cannot convert %T to SByte", value)
+	}
+}
+
+func (c *Client) convertToByte(value interface{}) (uint8, error) {
+	switch v := value.(type) {
+	case uint8:
+		return v, nil
+	case int, int8, int16, int32, int64:
+		val := c.toInt64(v)
+		if val < 0 || val > 255 {
+			return 0, fmt.Errorf("value %d out of range for Byte (0 to 255)", val)
+		}
+		return uint8(val), nil
+	case uint, uint16, uint32, uint64:
+		val := c.toUInt64(v)
+		if val > 255 {
+			return 0, fmt.Errorf("value %d out of range for Byte (0 to 255)", val)
+		}
+		return uint8(val), nil
+	case float32, float64:
+		val := int64(c.toFloat64(v))
+		if val < 0 || val > 255 {
+			return 0, fmt.Errorf("value %d out of range for Byte (0 to 255)", val)
+		}
+		return uint8(val), nil
+	case string:
+		val, err := c.parseStringToInt64(v)
+		if err != nil {
+			return 0, err
+		}
+		if val < 0 || val > 255 {
+			return 0, fmt.Errorf("value %d out of range for Byte (0 to 255)", val)
+		}
+		return uint8(val), nil
+	default:
+		return 0, fmt.Errorf("cannot convert %T to Byte", value)
+	}
+}
+
+func (c *Client) convertToInt16(value interface{}) (int16, error) {
+	switch v := value.(type) {
+	case int16:
+		return v, nil
+	case int, int8, int32, int64:
+		val := c.toInt64(v)
+		if val < -32768 || val > 32767 {
+			return 0, fmt.Errorf("value %d out of range for Int16 (-32768 to 32767)", val)
+		}
+		return int16(val), nil
+	case uint, uint8, uint16, uint32, uint64:
+		val := c.toUInt64(v)
+		if val > 32767 {
+			return 0, fmt.Errorf("value %d out of range for Int16 (-32768 to 32767)", val)
+		}
+		return int16(val), nil
+	case float32, float64:
+		val := int64(c.toFloat64(v))
+		if val < -32768 || val > 32767 {
+			return 0, fmt.Errorf("value %d out of range for Int16 (-32768 to 32767)", val)
+		}
+		return int16(val), nil
+	case string:
+		val, err := c.parseStringToInt64(v)
+		if err != nil {
+			return 0, err
+		}
+		if val < -32768 || val > 32767 {
+			return 0, fmt.Errorf("value %d out of range for Int16 (-32768 to 32767)", val)
+		}
+		return int16(val), nil
+	default:
+		return 0, fmt.Errorf("cannot convert %T to Int16", value)
+	}
+}
+
+func (c *Client) convertToUInt16(value interface{}) (uint16, error) {
+	switch v := value.(type) {
+	case uint16:
+		return v, nil
+	case int, int8, int16, int32, int64:
+		val := c.toInt64(v)
+		if val < 0 || val > 65535 {
+			return 0, fmt.Errorf("value %d out of range for UInt16 (0 to 65535)", val)
+		}
+		return uint16(val), nil
+	case uint, uint8, uint32, uint64:
+		val := c.toUInt64(v)
+		if val > 65535 {
+			return 0, fmt.Errorf("value %d out of range for UInt16 (0 to 65535)", val)
+		}
+		return uint16(val), nil
+	case float32, float64:
+		val := int64(c.toFloat64(v))
+		if val < 0 || val > 65535 {
+			return 0, fmt.Errorf("value %d out of range for UInt16 (0 to 65535)", val)
+		}
+		return uint16(val), nil
+	case string:
+		val, err := c.parseStringToInt64(v)
+		if err != nil {
+			return 0, err
+		}
+		if val < 0 || val > 65535 {
+			return 0, fmt.Errorf("value %d out of range for UInt16 (0 to 65535)", val)
+		}
+		return uint16(val), nil
+	default:
+		return 0, fmt.Errorf("cannot convert %T to UInt16", value)
+	}
+}
+
+func (c *Client) convertToInt32(value interface{}) (int32, error) {
+	switch v := value.(type) {
+	case int32:
+		return v, nil
+	case int, int8, int16, int64:
+		val := c.toInt64(v)
+		if val < -2147483648 || val > 2147483647 {
+			return 0, fmt.Errorf("value %d out of range for Int32 (-2147483648 to 2147483647)", val)
+		}
+		return int32(val), nil
+	case uint, uint8, uint16, uint32, uint64:
+		val := c.toUInt64(v)
+		if val > 2147483647 {
+			return 0, fmt.Errorf("value %d out of range for Int32 (-2147483648 to 2147483647)", val)
+		}
+		return int32(val), nil
+	case float32, float64:
+		val := int64(c.toFloat64(v))
+		if val < -2147483648 || val > 2147483647 {
+			return 0, fmt.Errorf("value %d out of range for Int32 (-2147483648 to 2147483647)", val)
+		}
+		return int32(val), nil
+	case string:
+		val, err := c.parseStringToInt64(v)
+		if err != nil {
+			return 0, err
+		}
+		if val < -2147483648 || val > 2147483647 {
+			return 0, fmt.Errorf("value %d out of range for Int32 (-2147483648 to 2147483647)", val)
+		}
+		return int32(val), nil
+	default:
+		return 0, fmt.Errorf("cannot convert %T to Int32", value)
+	}
+}
+
+func (c *Client) convertToUInt32(value interface{}) (uint32, error) {
+	switch v := value.(type) {
+	case uint32:
+		return v, nil
+	case int, int8, int16, int32, int64:
+		val := c.toInt64(v)
+		if val < 0 || val > 4294967295 {
+			return 0, fmt.Errorf("value %d out of range for UInt32 (0 to 4294967295)", val)
+		}
+		return uint32(val), nil
+	case uint, uint8, uint16, uint64:
+		val := c.toUInt64(v)
+		if val > 4294967295 {
+			return 0, fmt.Errorf("value %d out of range for UInt32 (0 to 4294967295)", val)
+		}
+		return uint32(val), nil
+	case float32, float64:
+		val := int64(c.toFloat64(v))
+		if val < 0 || val > 4294967295 {
+			return 0, fmt.Errorf("value %d out of range for UInt32 (0 to 4294967295)", val)
+		}
+		return uint32(val), nil
+	case string:
+		val, err := c.parseStringToInt64(v)
+		if err != nil {
+			return 0, err
+		}
+		if val < 0 || val > 4294967295 {
+			return 0, fmt.Errorf("value %d out of range for UInt32 (0 to 4294967295)", val)
+		}
+		return uint32(val), nil
+	default:
+		return 0, fmt.Errorf("cannot convert %T to UInt32", value)
+	}
+}
+
+func (c *Client) convertToInt64(value interface{}) (int64, error) {
+	switch v := value.(type) {
+	case int64:
+		return v, nil
+	case int, int8, int16, int32:
+		return c.toInt64(v), nil
+	case uint, uint8, uint16, uint32, uint64:
+		val := c.toUInt64(v)
+		if val > 9223372036854775807 {
+			return 0, fmt.Errorf("value %d out of range for Int64", val)
+		}
+		return int64(val), nil
+	case float32, float64:
+		return int64(c.toFloat64(v)), nil
+	case string:
+		return c.parseStringToInt64(v)
+	default:
+		return 0, fmt.Errorf("cannot convert %T to Int64", value)
+	}
+}
+
+func (c *Client) convertToUInt64(value interface{}) (uint64, error) {
+	switch v := value.(type) {
+	case uint64:
+		return v, nil
+	case int, int8, int16, int32, int64:
+		val := c.toInt64(v)
+		if val < 0 {
+			return 0, fmt.Errorf("value %d out of range for UInt64 (must be non-negative)", val)
+		}
+		return uint64(val), nil
+	case uint, uint8, uint16, uint32:
+		return c.toUInt64(v), nil
+	case float32, float64:
+		val := c.toFloat64(v)
+		if val < 0 {
+			return 0, fmt.Errorf("value %f out of range for UInt64 (must be non-negative)", val)
+		}
+		return uint64(val), nil
+	case string:
+		val, err := c.parseStringToUInt64(v)
+		if err != nil {
+			return 0, err
+		}
+		return val, nil
+	default:
+		return 0, fmt.Errorf("cannot convert %T to UInt64", value)
+	}
+}
+
+func (c *Client) convertToFloat(value interface{}) (float32, error) {
+	switch v := value.(type) {
+	case float32:
+		return v, nil
+	case float64:
+		return float32(v), nil
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return float32(c.toFloat64(v)), nil
+	case string:
+		val, err := c.parseStringToFloat64(v)
+		if err != nil {
+			return 0, err
+		}
+		return float32(val), nil
+	default:
+		return 0, fmt.Errorf("cannot convert %T to Float", value)
+	}
+}
+
+func (c *Client) convertToDouble(value interface{}) (float64, error) {
+	switch v := value.(type) {
+	case float64:
+		return v, nil
+	case float32:
+		return float64(v), nil
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return c.toFloat64(v), nil
+	case string:
+		return c.parseStringToFloat64(v)
+	default:
+		return 0, fmt.Errorf("cannot convert %T to Double", value)
+	}
+}
+
+func (c *Client) convertToString(value interface{}) (string, error) {
+	switch v := value.(type) {
+	case string:
+		return v, nil
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", c.toInt64(v)), nil
+	case float32, float64:
+		return fmt.Sprintf("%g", c.toFloat64(v)), nil
+	case bool:
+		return fmt.Sprintf("%t", v), nil
+	default:
+		return fmt.Sprintf("%v", v), nil
+	}
+}
+
+func (c *Client) convertToDateTime(value interface{}) (time.Time, error) {
+	switch v := value.(type) {
+	case time.Time:
+		return v, nil
+	case string:
+		// Try parsing common date formats
+		formats := []string{
+			time.RFC3339,
+			time.RFC3339Nano,
+			"2006-01-02T15:04:05Z",
+			"2006-01-02 15:04:05",
+			"2006-01-02",
+		}
+		for _, format := range formats {
+			if t, err := time.Parse(format, v); err == nil {
+				return t, nil
+			}
+		}
+		return time.Time{}, fmt.Errorf("unable to parse DateTime string: %s", v)
+	case int, int64:
+		// Unix timestamp
+		return time.Unix(c.toInt64(v), 0), nil
+	case float64:
+		// Unix timestamp with fractional seconds
+		sec := int64(v)
+		nsec := int64((v - float64(sec)) * 1e9)
+		return time.Unix(sec, nsec), nil
+	default:
+		return time.Time{}, fmt.Errorf("cannot convert %T to DateTime", value)
+	}
+}
+
+// Helper functions for type conversion
+func (c *Client) toInt64(value interface{}) int64 {
+	switch v := value.(type) {
+	case int:
+		return int64(v)
+	case int8:
+		return int64(v)
+	case int16:
+		return int64(v)
+	case int32:
+		return int64(v)
+	case int64:
+		return v
+	case uint:
+		return int64(v)
+	case uint8:
+		return int64(v)
+	case uint16:
+		return int64(v)
+	case uint32:
+		return int64(v)
+	case uint64:
+		return int64(v)
+	case float64:
+		return int64(v)
+	default:
+		return 0
+	}
+}
+
+func (c *Client) toUInt64(value interface{}) uint64 {
+	switch v := value.(type) {
+	case int:
+		return uint64(v)
+	case int8:
+		return uint64(v)
+	case int16:
+		return uint64(v)
+	case int32:
+		return uint64(v)
+	case int64:
+		return uint64(v)
+	case uint:
+		return uint64(v)
+	case uint8:
+		return uint64(v)
+	case uint16:
+		return uint64(v)
+	case uint32:
+		return uint64(v)
+	case uint64:
+		return v
+	case float64:
+		return uint64(v)
+	default:
+		return 0
+	}
+}
+
+func (c *Client) toFloat64(value interface{}) float64 {
+	switch v := value.(type) {
+	case int:
+		return float64(v)
+	case int8:
+		return float64(v)
+	case int16:
+		return float64(v)
+	case int32:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case uint:
+		return float64(v)
+	case uint8:
+		return float64(v)
+	case uint16:
+		return float64(v)
+	case uint32:
+		return float64(v)
+	case uint64:
+		return float64(v)
+	case float32:
+		return float64(v)
+	case float64:
+		return v
+	default:
+		return 0
+	}
+}
+
+func (c *Client) parseStringToInt64(s string) (int64, error) {
+	// Remove whitespace
+	s = strings.TrimSpace(s)
+
+	// Try parsing as int64
+	val, err := fmt.Sscanf(s, "%d", new(int64))
+	if err != nil || val != 1 {
+		return 0, fmt.Errorf("invalid integer string: %s", s)
+	}
+
+	// Parse again to get the actual value
+	var result int64
+	_, err = fmt.Sscanf(s, "%d", &result)
+	return result, err
+}
+
+func (c *Client) parseStringToUInt64(s string) (uint64, error) {
+	// Remove whitespace
+	s = strings.TrimSpace(s)
+
+	// Try parsing as uint64
+	val, err := fmt.Sscanf(s, "%d", new(uint64))
+	if err != nil || val != 1 {
+		return 0, fmt.Errorf("invalid unsigned integer string: %s", s)
+	}
+
+	// Parse again to get the actual value
+	var result uint64
+	_, err = fmt.Sscanf(s, "%d", &result)
+	return result, err
+}
+
+func (c *Client) parseStringToFloat64(s string) (float64, error) {
+	// Remove whitespace
+	s = strings.TrimSpace(s)
+
+	// Try parsing as float64
+	val, err := fmt.Sscanf(s, "%g", new(float64))
+	if err != nil || val != 1 {
+		return 0, fmt.Errorf("invalid float string: %s", s)
+	}
+
+	// Parse again to get the actual value
+	var result float64
+	_, err = fmt.Sscanf(s, "%g", &result)
+	return result, err
 }

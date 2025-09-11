@@ -423,15 +423,15 @@ func (s *Server) handleWrite(ctx context.Context, req mcp.CallToolRequest) (*mcp
 
 			// Add helpful hints based on the data type
 			switch typeInfo.DataType.IntID() {
-			case 1:
+			case uint32(ua.TypeIDBoolean):
 				errorMsg += "\n\nHint: This node expects a boolean value (true/false)"
-			case 2, 3, 4, 5, 6, 7, 8, 9:
+			case uint32(ua.TypeIDSByte), uint32(ua.TypeIDByte), uint32(ua.TypeIDInt16), uint32(ua.TypeIDUint16), uint32(ua.TypeIDInt32), uint32(ua.TypeIDUint32), uint32(ua.TypeIDInt64), uint32(ua.TypeIDUint64):
 				errorMsg += "\n\nHint: This node expects an integer value"
-			case 10, 11:
+			case uint32(ua.TypeIDFloat), uint32(ua.TypeIDDouble):
 				errorMsg += "\n\nHint: This node expects a floating-point number"
-			case 12:
+			case uint32(ua.TypeIDString):
 				errorMsg += "\n\nHint: This node expects a string value"
-			case 13:
+			case uint32(ua.TypeIDDateTime):
 				errorMsg += "\n\nHint: This node expects a DateTime value (string or number)"
 			}
 
