@@ -17,16 +17,32 @@ import (
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/logger"
 )
 
+// opcuaClient is the subset of *opcua.Client's surface this package depends
+// on. Depending on this interface rather than the concrete gopcua type lets
+// tests inject a mock that returns canned responses, without needing a live
+// or simulated OPC-UA server.
+type opcuaClient interface {
+	Connect(ctx context.Context) error
+	Close(ctx context.Context) error
+	Read(ctx context.Context, req *ua.ReadRequest) (*ua.ReadResponse, error)
+	Write(ctx context.Context, req *ua.WriteRequest) (*ua.WriteResponse, error)
+	Browse(ctx context.Context, req *ua.BrowseRequest) (*ua.BrowseResponse, error)
+}
+
+// var _ opcuaClient documents (and fails to compile if broken by an upstream
+// gopcua signature change) that *opcua.Client satisfies opcuaClient.
+var _ opcuaClient = (*opcua.Client)(nil)
+
 // Client wraps the OPC-UA client with additional functionality
 type Client struct {
 	mu        sync.RWMutex
-	client    *opcua.Client
+	client    opcuaClient
 	config    *config.OPCUAConfig // immutable post-construction; not guarded by mu
 	connected bool
 }
 
 // snapshot returns a consistent read of the current client/connected state.
-func (c *Client) snapshot() (*opcua.Client, bool) {
+func (c *Client) snapshot() (opcuaClient, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.client, c.connected
@@ -1059,7 +1075,7 @@ func (c *Client) isNonNegative(value interface{}) bool {
 }
 
 // writeWithBasicConversion performs a write operation using basic type conversion (fallback)
-func (c *Client) writeWithBasicConversion(ctx context.Context, client *opcua.Client, id *ua.NodeID, nodeID string, value interface{}) error {
+func (c *Client) writeWithBasicConversion(ctx context.Context, client opcuaClient, id *ua.NodeID, nodeID string, value interface{}) error {
 	// Convert value to ua.Variant using basic conversion
 	variant, err := ua.NewVariant(value)
 	if err != nil {
