@@ -418,6 +418,42 @@ func TestParseStringToFloat64(t *testing.T) {
 	}
 }
 
+// TestWritePropagatesValidationFailure covers P0-6 (findings.md, "Write()
+// silently ignores validation failures", high). Uses the opcuaClient mock
+// seam to drive Write() through a real GetNodeTypeInfo success path (an
+// Int32-typed, writable node) with a value that fails ValidateValueForNode,
+// and asserts Write() returns the wrapped error without ever attempting the
+// underlying Write RPC.
+func TestWritePropagatesValidationFailure(t *testing.T) {
+	cfg := &config.OPCUAConfig{
+		Endpoint:       "opc.tcp://localhost:4840",
+		AuthMode:       "anonymous",
+		SecurityPolicy: "None",
+		SecurityMode:   "None",
+		RequestTimeout: 30 * time.Second,
+		SessionTimeout: 60 * time.Second,
+		MaxRetries:     3,
+		RetryDelay:     1 * time.Second,
+	}
+
+	client := NewClient(cfg)
+	mock := &mockOpcuaClient{
+		readFunc: typeInfoReadFunc(ua.NewNumericNodeID(0, uint32(ua.TypeIDInt32)), writeAccessBit),
+	}
+	client.client = mock
+	client.connected = true
+
+	ctx := context.Background()
+	err := client.Write(ctx, "ns=2;i=1", "not-an-int")
+
+	if err == nil {
+		t.Fatal("Write() with a type-mismatched value expected an error, got nil")
+	}
+	if mock.writeCalls != 0 {
+		t.Errorf("Write() issued %d Write RPC(s) after validation failed, want 0", mock.writeCalls)
+	}
+}
+
 func TestParseNodeIDs(t *testing.T) {
 	tests := []struct {
 		name     string
