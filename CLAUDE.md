@@ -537,3 +537,66 @@ The Operations stage will eventually include:
 - Application code: Workspace root (NEVER in aidlc-docs/)
 - Documentation: aidlc-docs/ only
 - Project structure: See code-generation.md for patterns by project type
+
+---
+
+## Project Context: opcua-mcp
+
+Everything below reflects this repo's *current, verified* state as of the last audit (`docs/plan/findings.md`) — not aspirations. Where a planned fix hasn't landed yet, it's phrased as "will be introduced by `<plan-item-id>`," not described as already true.
+
+### What this is
+
+`opcua-mcp` is a Go MCP (Model Context Protocol) server that bridges LLM clients to OPC-UA industrial automation servers. It exposes OPC-UA read/write/browse/discovery operations as MCP tools over stdio or HTTP transport, and maintains a searchable (Bleve full-text) cache of the server's address space via background discovery.
+
+### Architecture
+
+- `cmd/opcua-mcp.go` — entrypoint. Loads config, initializes the logger, constructs `internal/opcua.Client`, connects eagerly unless `SERVER_TRANSPORT=stdio` (stdio connects lazily via the `opcua_connect` tool), constructs `internal/mcp.Server`, starts it.
+- `internal/mcp/server.go` — `Server` type. Registers all MCP tools in `SetupTools()`, holds the `*opcua.Client` and `*opcua.DiscoveryService`, runs the stdio or HTTP transport loop, handles graceful shutdown (`setupGracefulShutdown`).
+- `internal/opcua/client.go` — `Client` type. Thin wrapper over `gopcua/opcua`: `Connect`/`Disconnect`/`IsConnected`, `Read`/`Write`/`Browse`, per-attribute node reads (`GetNodeClass`, `GetNodeDataType`, etc.), `GetNodeTypeInfo`/`ValidateValueForNode` for write-time type checking. **Currently has no internal synchronization** on its `client`/`connected` fields — do not assume it's safe to call from multiple goroutines until plan item `P0-1` lands.
+- `internal/opcua/discovery.go` — `DiscoveryService` type. Walks the OPC-UA address space from `SEARCH_DISCOVERY_ROOT_NODE` on a ticker (`SEARCH_DISCOVERY_INTERVAL`), maintains an in-memory `nodeCache` (protected by `cacheMutex sync.RWMutex` — this locking pattern is correct today and is the model to follow for new code) and a persistent on-disk Bleve full-text index for fuzzy node-name search.
+- `internal/config/` — env-var config via `caarlos0/env/v11`, four structs (`ServerConfig`/`SERVER_*`, `OPCUAConfig`/`OPCUA_*`, `MCPConfig`/`MCP_*`, `SearchConfig`/`SEARCH_*`), loaded once in `cmd/opcua-mcp.go`.
+- `internal/logger/` — `slog`-based structured logging, output destination (`stdout`/`stderr`/`file`) selected by `SERVER_LOG_OUTPUT`.
+
+### Build, test, run
+
+```sh
+go build ./...
+go vet ./...
+go test ./...
+go test -race ./...          # no test currently exercises Client from two goroutines — see P0-1
+gofmt -l .                   # should output nothing
+```
+
+Run locally, stdio mode (default transport, no OPC-UA connection until `opcua_connect` is called):
+```sh
+OPCUA_ENDPOINT=opc.tcp://localhost:4840 go run ./cmd/opcua-mcp
+```
+Run locally, HTTP mode (connects to the OPC-UA server eagerly at startup):
+```sh
+SERVER_TRANSPORT=http SERVER_HTTP_PORT=8080 OPCUA_ENDPOINT=opc.tcp://localhost:4840 go run ./cmd/opcua-mcp
+```
+
+`golangci-lint`/`staticcheck` are not reliably available in every dev environment (see `docs/plan/decisions.md` item D8) — don't assume their absence means the code is clean; `go vet`/`gofmt`/tests are the reliable local baseline.
+
+### Hard rules
+
+- **Never write to stdout in stdio mode.** MCP JSON-RPC uses stdout as the wire protocol; today (`SERVER_LOG_OUTPUT` default `stdout`) logs collide with it by default — this is a known critical bug (`docs/plan/findings.md` H1), fixed by plan item `P0-2` (forces stderr in stdio mode). Until `P0-2` lands, any code touching logger setup or stdio transport must be extra careful not to write to `os.Stdout` directly. After `P0-2` lands, logging is stderr-in-stdio-mode by construction — don't reintroduce a stdout path.
+- **No new direct dependencies without explicit sign-off.** The one pre-approved exception is promoting `go.etcd.io/bbolt` (already an indirect dependency via Bleve) to direct, for the persistent-cache work in `docs/plan/plan.md` Phase 2.
+- **Preserve env var and tool-name backward compatibility**, except the specific breaking removals already recorded in `docs/plan/decisions.md` (D1: removal of `opcua_get_value`/`opcua_browse`, gating of `opcua_debug_search`/`opcua_ensure_server_nodes`). Don't introduce other silent renames.
+- **Guard `Client.client`/`Client.connected` with `Client.mu`** once `P0-1` lands — every method must snapshot state via the `snapshot()` helper rather than reading the fields directly. Before `P0-1` lands, don't add new concurrent access paths to `Client` without also adding the mutex.
+- **Don't call `store`/Bleve methods while holding `DiscoveryService.cacheMutex` or `SubscriptionManager.mu`** (once those exist, Phase 2) — snapshot needed data under the lock, release, then do I/O.
+
+### Conventions
+
+- Error wrapping: `fmt.Errorf("...: %w", err)`.
+- All logging goes through `internal/logger` (a thin `slog` wrapper) — never `fmt.Print*`/`log.Print*` directly.
+- Tests are table-driven (see `internal/config/config_test.go`, `internal/opcua/client_test.go` for the existing style).
+- New MCP tools are registered in `internal/mcp/server.go`'s `SetupTools()`, each with a `mcp.NewTool(...)` definition and a `handleX` method; keep tool descriptions distinct enough to avoid reintroducing the overlap documented as H11.
+
+### Where to look for current work
+
+- `docs/plan/findings.md` — verified audit findings (H1-H11 plus additional issues), each with file:line evidence and severity. Treat this as ground truth for *why* a given plan item exists.
+- `docs/plan/plan.md` — the phased, ID-based implementation plan (`P0-1` … `P3-7`). Each item has acceptance criteria and a concrete verification step. This is the unit of work — pick items off it one at a time, in dependency order.
+- `docs/plan/decisions.md` — open questions needing human sign-off (dependency upgrades, `OPCUA_SERVER_CERT` fate, Docker UID choice, etc.) before the plan items gated on them can proceed.
+
+If you're picking up a plan item, re-verify its cited file:line references before trusting them — the code may have moved since the audit.
