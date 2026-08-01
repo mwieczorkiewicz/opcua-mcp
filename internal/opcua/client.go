@@ -419,12 +419,23 @@ func (c *Client) GetNodeClass(ctx context.Context, nodeID string) (ua.NodeClass,
 	}
 
 	// Extract node class from result
-	nodeClass, ok := resp.Results[0].Value.Value().(ua.NodeClass)
-	if !ok {
-		return 0, fmt.Errorf("failed to extract node class from result")
-	}
+	return decodeNodeClass(resp.Results[0].Value.Value())
+}
 
-	return nodeClass, nil
+// decodeNodeClass converts the raw NodeClass attribute value into a ua.NodeClass.
+// NodeClass decodes on the wire as a plain int32 (gopcua ua/variant.go's
+// TypeIDInt32 -> buf.ReadInt32()), not the uint32-based ua.NodeClass type
+// itself, so asserting directly to ua.NodeClass always fails against a real
+// server (findings.md H10a).
+func decodeNodeClass(raw interface{}) (ua.NodeClass, error) {
+	v, ok := raw.(int32)
+	if !ok {
+		return 0, fmt.Errorf("failed to extract node class from result: unexpected type %T", raw)
+	}
+	if v <= 0 {
+		return 0, fmt.Errorf("failed to extract node class from result: invalid value %d", v)
+	}
+	return ua.NodeClass(uint32(v)), nil
 }
 
 // GetNodeDataType returns the data type information for a variable node

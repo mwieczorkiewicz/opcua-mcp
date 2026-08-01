@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gopcua/opcua"
+	"github.com/gopcua/opcua/ua"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/config"
 )
 
@@ -269,6 +270,46 @@ func TestClientConcurrentAccess(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+// TestDecodeNodeClass covers P0-3 (findings.md H10a): NodeClass decodes on the
+// wire as a plain int32, not ua.NodeClass, so decodeNodeClass must assert to
+// int32 and reject non-positive values rather than asserting to ua.NodeClass
+// directly (which always fails against a real server).
+func TestDecodeNodeClass(t *testing.T) {
+	tests := []struct {
+		name      string
+		raw       interface{}
+		want      ua.NodeClass
+		wantError bool
+	}{
+		{name: "object", raw: int32(1), want: ua.NodeClassObject},
+		{name: "variable", raw: int32(2), want: ua.NodeClassVariable},
+		{name: "method", raw: int32(4), want: ua.NodeClassMethod},
+		{name: "view", raw: int32(128), want: ua.NodeClassView},
+		{name: "zero is invalid", raw: int32(0), wantError: true},
+		{name: "negative is invalid", raw: int32(-1), wantError: true},
+		{name: "wrong wire type ua.NodeClass", raw: ua.NodeClassObject, wantError: true},
+		{name: "wrong type string", raw: "1", wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := decodeNodeClass(tt.raw)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("decodeNodeClass(%v) expected error, got nil", tt.raw)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("decodeNodeClass(%v) unexpected error: %v", tt.raw, err)
+			}
+			if got != tt.want {
+				t.Errorf("decodeNodeClass(%v) = %v, want %v", tt.raw, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestParseNodeIDs(t *testing.T) {
