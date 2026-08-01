@@ -2,6 +2,20 @@
 
 A Model Context Protocol (MCP) server that enables integration between OPC-UA servers and Large Language Models (LLMs). This server provides a bridge between OPC-UA industrial automation systems and AI applications, allowing LLMs to interact with industrial data and control systems.
 
+## Changelog
+
+Notable behavior changes from the ongoing `docs/plan/plan.md` hardening pass
+(not yet a full rewrite - see that plan for the complete list of in-flight work):
+
+- **`opcua_write` now rejects type-mismatched values.** Previously, a value
+  that failed data-type validation against the target node was written
+  anyway (only a warning was logged). It now returns an error and the write
+  is never sent to the device. The tool's parameters are unchanged - only
+  error behavior on invalid input.
+- **stdio transport no longer logs to stdout**, even if `SERVER_LOG_OUTPUT`
+  is left at its default (`stdout`) or set explicitly - stdout carries the
+  MCP JSON-RPC stream in stdio mode, and logs there previously corrupted it.
+
 ## Features
 
 - **OPC-UA Client Integration**: Full support for OPC-UA client operations including read, write, browse, and server information
