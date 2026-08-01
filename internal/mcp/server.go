@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -24,6 +25,12 @@ type Server struct {
 	opcuaClient *opcua.Client
 	discovery   *opcua.DiscoveryService
 	config      *config.Config
+
+	// httpServerMu guards httpServer, which is set by startHTTP() and read by
+	// setupGracefulShutdown()'s signal-handling goroutine; it stays nil in
+	// stdio mode.
+	httpServerMu sync.Mutex
+	httpServer   *server.StreamableHTTPServer
 }
 
 // NewServer creates a new MCP server with OPC-UA capabilities
@@ -671,6 +678,11 @@ func (s *Server) startHTTP() error {
 	// Create HTTP server
 	httpServer := server.NewStreamableHTTPServer(s.mcpServer)
 
+	// Store the handle so setupGracefulShutdown can drain it on signal.
+	s.httpServerMu.Lock()
+	s.httpServer = httpServer
+	s.httpServerMu.Unlock()
+
 	// Start server
 	return httpServer.Start(":" + s.config.Server.HTTPPort)
 }
@@ -946,6 +958,18 @@ func (s *Server) setupGracefulShutdown() {
 		// Stop discovery service
 		if err := s.discovery.Stop(); err != nil {
 			logger.Error("Error stopping discovery service", "error", err)
+		}
+
+		// Close the HTTP server so in-flight requests get a chance to drain
+		// before process exit (findings.md H10c). No-op in stdio mode, where
+		// httpServer stays nil.
+		s.httpServerMu.Lock()
+		httpServer := s.httpServer
+		s.httpServerMu.Unlock()
+		if httpServer != nil {
+			if err := httpServer.Shutdown(ctx); err != nil {
+				logger.Error("Error shutting down HTTP server", "error", err)
+			}
 		}
 
 		// Disconnect from OPC-UA server
