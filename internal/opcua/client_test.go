@@ -312,6 +312,112 @@ func TestDecodeNodeClass(t *testing.T) {
 	}
 }
 
+// TestParseStringToInt64/UInt64/Float64 cover P0-4 (findings.md H10b): the old
+// fmt.Sscanf-based parsing didn't require the whole string to be consumed, so
+// "12abc" silently parsed as 12 instead of erroring - a malformed numeric
+// input from an MCP tool caller could write a wrong value to a live device.
+func TestParseStringToInt64(t *testing.T) {
+	c := &Client{}
+	tests := []struct {
+		input     string
+		want      int64
+		wantError bool
+	}{
+		{input: "42", want: 42},
+		{input: " 42 ", want: 42},
+		{input: "-7", want: -7},
+		{input: "12abc", wantError: true},
+		{input: "  ", wantError: true},
+		{input: "", wantError: true},
+		{input: "12.5", wantError: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := c.parseStringToInt64(tt.input)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("parseStringToInt64(%q) expected error, got nil (value %d)", tt.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseStringToInt64(%q) unexpected error: %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Errorf("parseStringToInt64(%q) = %d, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseStringToUInt64(t *testing.T) {
+	c := &Client{}
+	tests := []struct {
+		input     string
+		want      uint64
+		wantError bool
+	}{
+		{input: "42", want: 42},
+		{input: " 42 ", want: 42},
+		{input: "12abc", wantError: true},
+		{input: "  ", wantError: true},
+		{input: "", wantError: true},
+		{input: "12.5", wantError: true},
+		{input: "-7", wantError: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := c.parseStringToUInt64(tt.input)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("parseStringToUInt64(%q) expected error, got nil (value %d)", tt.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseStringToUInt64(%q) unexpected error: %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Errorf("parseStringToUInt64(%q) = %d, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseStringToFloat64(t *testing.T) {
+	c := &Client{}
+	tests := []struct {
+		input     string
+		want      float64
+		wantError bool
+	}{
+		{input: "42", want: 42},
+		{input: " 42 ", want: 42},
+		{input: "-7", want: -7},
+		{input: "3.14", want: 3.14},
+		{input: "12abc", wantError: true},
+		{input: "  ", wantError: true},
+		{input: "", wantError: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := c.parseStringToFloat64(tt.input)
+			if tt.wantError {
+				if err == nil {
+					t.Fatalf("parseStringToFloat64(%q) expected error, got nil (value %g)", tt.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseStringToFloat64(%q) unexpected error: %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Errorf("parseStringToFloat64(%q) = %g, want %g", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseNodeIDs(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1629,49 +1630,37 @@ func (c *Client) toFloat64(value interface{}) float64 {
 }
 
 func (c *Client) parseStringToInt64(s string) (int64, error) {
-	// Remove whitespace
 	s = strings.TrimSpace(s)
-
-	// Try parsing as int64
-	val, err := fmt.Sscanf(s, "%d", new(int64))
-	if err != nil || val != 1 {
-		return 0, fmt.Errorf("invalid integer string: %s", s)
+	if s == "" {
+		return 0, fmt.Errorf("invalid integer string: %q", s)
 	}
-
-	// Parse again to get the actual value
-	var result int64
-	_, err = fmt.Sscanf(s, "%d", &result)
-	return result, err
+	result, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid integer string: %q: %w", s, err)
+	}
+	return result, nil
 }
 
 func (c *Client) parseStringToUInt64(s string) (uint64, error) {
-	// Remove whitespace
 	s = strings.TrimSpace(s)
-
-	// Try parsing as uint64
-	val, err := fmt.Sscanf(s, "%d", new(uint64))
-	if err != nil || val != 1 {
-		return 0, fmt.Errorf("invalid unsigned integer string: %s", s)
+	if s == "" {
+		return 0, fmt.Errorf("invalid unsigned integer string: %q", s)
 	}
-
-	// Parse again to get the actual value
-	var result uint64
-	_, err = fmt.Sscanf(s, "%d", &result)
-	return result, err
+	result, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid unsigned integer string: %q: %w", s, err)
+	}
+	return result, nil
 }
 
 func (c *Client) parseStringToFloat64(s string) (float64, error) {
-	// Remove whitespace
 	s = strings.TrimSpace(s)
-
-	// Try parsing as float64
-	val, err := fmt.Sscanf(s, "%g", new(float64))
-	if err != nil || val != 1 {
-		return 0, fmt.Errorf("invalid float string: %s", s)
+	if s == "" {
+		return 0, fmt.Errorf("invalid float string: %q", s)
 	}
-
-	// Parse again to get the actual value
-	var result float64
-	_, err = fmt.Sscanf(s, "%g", &result)
-	return result, err
+	result, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid float string: %q: %w", s, err)
+	}
+	return result, nil
 }
