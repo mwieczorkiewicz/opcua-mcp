@@ -504,6 +504,43 @@ func TestReadReturnsPerNodePartialResults(t *testing.T) {
 	}
 }
 
+// TestWriteFetchesNodeTypeInfoOnce covers P1-4 (findings.md H4, partial
+// fix): Write() used to call GetNodeTypeInfo directly and then again inside
+// ValidateValueForNode, doubling the 5 underlying attribute reads to 10.
+// ValidateValueForNode now takes the already-fetched *NodeTypeInfo, so one
+// Write() call should issue exactly 5 reads (the full fix - a persistent
+// typeinfo cache across separate Write() calls - lands with P2-8).
+func TestWriteFetchesNodeTypeInfoOnce(t *testing.T) {
+	cfg := &config.OPCUAConfig{
+		Endpoint:       "opc.tcp://localhost:4840",
+		AuthMode:       "anonymous",
+		SecurityPolicy: "None",
+		SecurityMode:   "None",
+		RequestTimeout: 30 * time.Second,
+		SessionTimeout: 60 * time.Second,
+		MaxRetries:     3,
+		RetryDelay:     1 * time.Second,
+	}
+
+	client := NewClient(cfg)
+	mock := &mockOpcuaClient{
+		readFunc: typeInfoReadFunc(ua.NewNumericNodeID(0, uint32(ua.TypeIDInt32)), writeAccessBit),
+	}
+	client.client = mock
+	client.connected = true
+
+	if err := client.Write(context.Background(), "ns=2;i=1", int32(42)); err != nil {
+		t.Fatalf("Write() unexpected error: %v", err)
+	}
+
+	if mock.readCalls != 5 {
+		t.Errorf("Write() issued %d Read calls, want exactly 5 (not the pre-P1-4 10)", mock.readCalls)
+	}
+	if mock.writeCalls != 1 {
+		t.Errorf("Write() issued %d Write RPC(s), want 1", mock.writeCalls)
+	}
+}
+
 func TestParseNodeIDs(t *testing.T) {
 	tests := []struct {
 		name     string

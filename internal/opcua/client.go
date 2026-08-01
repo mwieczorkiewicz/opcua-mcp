@@ -302,7 +302,7 @@ func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) er
 	// Validate value against node's data type before attempting to write. An
 	// invalid value must never reach a live OPC-UA device (findings.md,
 	// "Write() silently ignores validation failures").
-	if err := c.ValidateValueForNode(ctx, nodeID, value); err != nil {
+	if err := c.ValidateValueForNode(value, typeInfo); err != nil {
 		return fmt.Errorf("value validation failed for node %s: %w", nodeID, err)
 	}
 
@@ -849,14 +849,12 @@ func (c *Client) GetNodeTypeInfo(ctx context.Context, nodeID string) (*NodeTypeI
 	}, nil
 }
 
-// ValidateValueForNode validates that a value is compatible with the node's data type
-func (c *Client) ValidateValueForNode(ctx context.Context, nodeID string, value interface{}) error {
-	// Get node type information
-	typeInfo, err := c.GetNodeTypeInfo(ctx, nodeID)
-	if err != nil {
-		return fmt.Errorf("failed to get node type information: %w", err)
-	}
-
+// ValidateValueForNode validates that a value is compatible with the given,
+// already-fetched node type information. Callers that already have a
+// NodeTypeInfo (e.g. Write(), which fetches it once) must pass it directly
+// instead of triggering a second, redundant 5-read round trip (findings.md
+// H4; the full fix, a persistent typeinfo cache, lands with P2-8).
+func (c *Client) ValidateValueForNode(value interface{}, typeInfo *NodeTypeInfo) error {
 	// Check if node is writable
 	if !typeInfo.IsUserWritable {
 		return fmt.Errorf("node is not writable (UserAccessLevel: %d, AccessLevel: %d)",
