@@ -2,6 +2,7 @@ package opcua
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -218,6 +219,56 @@ func TestClientGetServerInfoWhenNotConnected(t *testing.T) {
 	if err.Error() != expectedErr {
 		t.Errorf("Expected error '%s', got '%s'", expectedErr, err.Error())
 	}
+}
+
+// TestClientConcurrentAccess drives IsConnected()/Read() from one goroutine while
+// SetConnectedForTesting() toggles state from another, to exercise P0-1's mutex
+// under `go test -race`. c.client is never assigned a live connection here, so
+// Read() always short-circuits on the "not connected" check before touching the
+// zero-value *opcua.Client — this validates the mu-guarded field access itself,
+// not real RPC behavior.
+func TestClientConcurrentAccess(t *testing.T) {
+	cfg := &config.OPCUAConfig{
+		Endpoint:       "opc.tcp://localhost:4840",
+		AuthMode:       "anonymous",
+		SecurityPolicy: "None",
+		SecurityMode:   "None",
+		RequestTimeout: 30 * time.Second,
+		SessionTimeout: 60 * time.Second,
+		MaxRetries:     3,
+		RetryDelay:     1 * time.Second,
+	}
+
+	client := NewClient(cfg)
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				client.IsConnected()
+				_, _ = client.Read(ctx, []string{"i=85"})
+			}
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			client.SetConnectedForTesting(i%2 == 0)
+		}
+		close(stop)
+	}()
+
+	wg.Wait()
 }
 
 func TestParseNodeIDs(t *testing.T) {

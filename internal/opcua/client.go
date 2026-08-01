@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gopcua/opcua"
@@ -17,9 +18,17 @@ import (
 
 // Client wraps the OPC-UA client with additional functionality
 type Client struct {
+	mu        sync.RWMutex
 	client    *opcua.Client
-	config    *config.OPCUAConfig
+	config    *config.OPCUAConfig // immutable post-construction; not guarded by mu
 	connected bool
+}
+
+// snapshot returns a consistent read of the current client/connected state.
+func (c *Client) snapshot() (*opcua.Client, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.client, c.connected
 }
 
 // NewClient creates a new OPC-UA client with the given configuration
@@ -83,8 +92,10 @@ func (c *Client) Connect(ctx context.Context) error {
 		break
 	}
 
+	c.mu.Lock()
 	c.client = client
 	c.connected = true
+	c.mu.Unlock()
 	return nil
 }
 
@@ -114,6 +125,8 @@ func (c *Client) addCertificateAuth(opts []opcua.Option) ([]opcua.Option, error)
 
 // Disconnect closes the connection to the OPC-UA server
 func (c *Client) Disconnect(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.client != nil && c.connected {
 		err := c.client.Close(ctx)
 		c.connected = false
@@ -124,11 +137,14 @@ func (c *Client) Disconnect(ctx context.Context) error {
 
 // IsConnected returns whether the client is connected
 func (c *Client) IsConnected() bool {
-	return c.connected && c.client != nil
+	client, connected := c.snapshot()
+	return connected && client != nil
 }
 
 // SetConnectedForTesting sets the connected flag for testing purposes
 func (c *Client) SetConnectedForTesting(connected bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.connected = connected
 }
 
@@ -203,7 +219,8 @@ func ParseNodeIDs(input string) ([]string, error) {
 
 // Read reads values from the specified node IDs
 func (c *Client) Read(ctx context.Context, nodeIDs []string) ([]*ua.DataValue, error) {
-	if !c.IsConnected() {
+	client, connected := c.snapshot()
+	if !connected || client == nil {
 		return nil, fmt.Errorf("client is not connected")
 	}
 
@@ -232,7 +249,7 @@ func (c *Client) Read(ctx context.Context, nodeIDs []string) ([]*ua.DataValue, e
 	}
 
 	// Send read request
-	resp, err := c.client.Read(ctx, req)
+	resp, err := client.Read(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read from OPC-UA server: %w", err)
 	}
@@ -249,7 +266,8 @@ func (c *Client) Read(ctx context.Context, nodeIDs []string) ([]*ua.DataValue, e
 
 // Write writes values to the specified node IDs with intelligent type conversion
 func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) error {
-	if !c.IsConnected() {
+	client, connected := c.snapshot()
+	if !connected || client == nil {
 		return fmt.Errorf("client is not connected")
 	}
 
@@ -264,7 +282,7 @@ func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) er
 	if err != nil {
 		// If we can't get type info, fall back to basic conversion
 		logger.Warn("Failed to get node type information, using basic conversion", "error", err)
-		return c.writeWithBasicConversion(ctx, id, nodeID, value)
+		return c.writeWithBasicConversion(ctx, client, id, nodeID, value)
 	}
 
 	// Validate value against node's data type before attempting to write
@@ -301,7 +319,7 @@ func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) er
 	}
 
 	// Send write request
-	resp, err := c.client.Write(ctx, req)
+	resp, err := client.Write(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to write to OPC-UA server: %w", err)
 	}
@@ -316,7 +334,8 @@ func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) er
 
 // Browse browses the node hierarchy starting from the specified node
 func (c *Client) Browse(ctx context.Context, nodeID string) ([]*ua.ReferenceDescription, error) {
-	if !c.IsConnected() {
+	client, connected := c.snapshot()
+	if !connected || client == nil {
 		return nil, fmt.Errorf("client is not connected")
 	}
 
@@ -342,7 +361,7 @@ func (c *Client) Browse(ctx context.Context, nodeID string) ([]*ua.ReferenceDesc
 	}
 
 	// Send browse request
-	resp, err := c.client.Browse(ctx, req)
+	resp, err := client.Browse(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to browse OPC-UA server: %w", err)
 	}
@@ -361,7 +380,8 @@ func (c *Client) Browse(ctx context.Context, nodeID string) ([]*ua.ReferenceDesc
 
 // GetNodeClass returns the node class of the specified node
 func (c *Client) GetNodeClass(ctx context.Context, nodeID string) (ua.NodeClass, error) {
-	if !c.IsConnected() {
+	client, connected := c.snapshot()
+	if !connected || client == nil {
 		return 0, fmt.Errorf("client is not connected")
 	}
 
@@ -384,7 +404,7 @@ func (c *Client) GetNodeClass(ctx context.Context, nodeID string) (ua.NodeClass,
 	}
 
 	// Send read request
-	resp, err := c.client.Read(ctx, req)
+	resp, err := client.Read(ctx, req)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read node class: %w", err)
 	}
@@ -409,7 +429,8 @@ func (c *Client) GetNodeClass(ctx context.Context, nodeID string) (ua.NodeClass,
 
 // GetNodeDataType returns the data type information for a variable node
 func (c *Client) GetNodeDataType(ctx context.Context, nodeID string) (*ua.NodeID, error) {
-	if !c.IsConnected() {
+	client, connected := c.snapshot()
+	if !connected || client == nil {
 		return nil, fmt.Errorf("client is not connected")
 	}
 
@@ -432,7 +453,7 @@ func (c *Client) GetNodeDataType(ctx context.Context, nodeID string) (*ua.NodeID
 	}
 
 	// Send read request
-	resp, err := c.client.Read(ctx, req)
+	resp, err := client.Read(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read node data type: %w", err)
 	}
@@ -457,7 +478,8 @@ func (c *Client) GetNodeDataType(ctx context.Context, nodeID string) (*ua.NodeID
 
 // GetNodeValueRank returns the value rank information for a variable node
 func (c *Client) GetNodeValueRank(ctx context.Context, nodeID string) (int32, error) {
-	if !c.IsConnected() {
+	client, connected := c.snapshot()
+	if !connected || client == nil {
 		return 0, fmt.Errorf("client is not connected")
 	}
 
@@ -480,7 +502,7 @@ func (c *Client) GetNodeValueRank(ctx context.Context, nodeID string) (int32, er
 	}
 
 	// Send read request
-	resp, err := c.client.Read(ctx, req)
+	resp, err := client.Read(ctx, req)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read node value rank: %w", err)
 	}
@@ -505,7 +527,8 @@ func (c *Client) GetNodeValueRank(ctx context.Context, nodeID string) (int32, er
 
 // GetNodeArrayDimensions returns the array dimensions for a variable node
 func (c *Client) GetNodeArrayDimensions(ctx context.Context, nodeID string) ([]uint32, error) {
-	if !c.IsConnected() {
+	client, connected := c.snapshot()
+	if !connected || client == nil {
 		return nil, fmt.Errorf("client is not connected")
 	}
 
@@ -528,7 +551,7 @@ func (c *Client) GetNodeArrayDimensions(ctx context.Context, nodeID string) ([]u
 	}
 
 	// Send read request
-	resp, err := c.client.Read(ctx, req)
+	resp, err := client.Read(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read node array dimensions: %w", err)
 	}
@@ -554,7 +577,8 @@ func (c *Client) GetNodeArrayDimensions(ctx context.Context, nodeID string) ([]u
 
 // GetNodeAccessLevel returns the access level for a variable node
 func (c *Client) GetNodeAccessLevel(ctx context.Context, nodeID string) (byte, error) {
-	if !c.IsConnected() {
+	client, connected := c.snapshot()
+	if !connected || client == nil {
 		return 0, fmt.Errorf("client is not connected")
 	}
 
@@ -577,7 +601,7 @@ func (c *Client) GetNodeAccessLevel(ctx context.Context, nodeID string) (byte, e
 	}
 
 	// Send read request
-	resp, err := c.client.Read(ctx, req)
+	resp, err := client.Read(ctx, req)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read node access level: %w", err)
 	}
@@ -602,7 +626,8 @@ func (c *Client) GetNodeAccessLevel(ctx context.Context, nodeID string) (byte, e
 
 // GetNodeUserAccessLevel returns the user access level for a variable node
 func (c *Client) GetNodeUserAccessLevel(ctx context.Context, nodeID string) (byte, error) {
-	if !c.IsConnected() {
+	client, connected := c.snapshot()
+	if !connected || client == nil {
 		return 0, fmt.Errorf("client is not connected")
 	}
 
@@ -625,7 +650,7 @@ func (c *Client) GetNodeUserAccessLevel(ctx context.Context, nodeID string) (byt
 	}
 
 	// Send read request
-	resp, err := c.client.Read(ctx, req)
+	resp, err := client.Read(ctx, req)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read node user access level: %w", err)
 	}
@@ -1022,7 +1047,7 @@ func (c *Client) isNonNegative(value interface{}) bool {
 }
 
 // writeWithBasicConversion performs a write operation using basic type conversion (fallback)
-func (c *Client) writeWithBasicConversion(ctx context.Context, id *ua.NodeID, nodeID string, value interface{}) error {
+func (c *Client) writeWithBasicConversion(ctx context.Context, client *opcua.Client, id *ua.NodeID, nodeID string, value interface{}) error {
 	// Convert value to ua.Variant using basic conversion
 	variant, err := ua.NewVariant(value)
 	if err != nil {
@@ -1044,7 +1069,7 @@ func (c *Client) writeWithBasicConversion(ctx context.Context, id *ua.NodeID, no
 	}
 
 	// Send write request
-	resp, err := c.client.Write(ctx, req)
+	resp, err := client.Write(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to write to OPC-UA server: %w", err)
 	}
