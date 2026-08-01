@@ -32,9 +32,14 @@ func New(cfg *config.ServerConfig) (*Logger, error) {
 		level = slog.LevelInfo
 	}
 
-	// Configure output
+	// Configure output. stdio transport carries the MCP JSON-RPC wire protocol on
+	// stdout, so logging there is always forced to stderr regardless of LogOutput.
+	envVal, ok := os.LookupEnv(logOutputEnvVar)
+	explicitStdoutOverride := ok && strings.EqualFold(envVal, "stdout")
+	effectiveOutput, warning := resolveLogOutput(cfg.Transport, cfg.LogOutput, explicitStdoutOverride)
+
 	var output io.Writer
-	switch strings.ToLower(cfg.LogOutput) {
+	switch strings.ToLower(effectiveOutput) {
 	case "stderr":
 		output = os.Stderr
 	case "file":
@@ -72,7 +77,32 @@ func New(cfg *config.ServerConfig) (*Logger, error) {
 	// Set as default logger
 	slog.SetDefault(logger)
 
+	if warning != "" {
+		logger.Warn(warning)
+	}
+
 	return &Logger{Logger: logger}, nil
+}
+
+// logOutputEnvVar is the env var name backing ServerConfig.LogOutput
+// (envPrefix "SERVER_" + env:"LOG_OUTPUT"), used to detect an explicit
+// user override as opposed to the envDefault taking effect.
+const logOutputEnvVar = "SERVER_LOG_OUTPUT"
+
+// resolveLogOutput determines the effective log output destination for a given
+// transport/configured-output combination, forcing stderr whenever transport is
+// stdio (stdout there carries the MCP JSON-RPC wire protocol). It returns a
+// non-empty warning only when the caller explicitly set LogOutput=stdout via
+// the environment (as opposed to the envDefault), so the override is surfaced
+// once rather than silently swallowed.
+func resolveLogOutput(transport, configuredOutput string, explicitStdoutOverride bool) (effective string, warning string) {
+	if strings.EqualFold(transport, "stdio") && strings.EqualFold(configuredOutput, "stdout") {
+		if explicitStdoutOverride {
+			return "stderr", "SERVER_LOG_OUTPUT=stdout is ignored in stdio transport mode; logging to stderr to protect the JSON-RPC stream"
+		}
+		return "stderr", ""
+	}
+	return configuredOutput, ""
 }
 
 // WithContext returns a logger with context
