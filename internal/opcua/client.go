@@ -286,11 +286,11 @@ func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) er
 		return c.writeWithBasicConversion(ctx, client, id, nodeID, value)
 	}
 
-	// Validate value against node's data type before attempting to write
+	// Validate value against node's data type before attempting to write. An
+	// invalid value must never reach a live OPC-UA device (findings.md,
+	// "Write() silently ignores validation failures").
 	if err := c.ValidateValueForNode(ctx, nodeID, value); err != nil {
-		// Log the validation error but continue with the write attempt
-		// This allows writes to nodes that don't support all type information attributes
-		logger.Warn("Type validation failed", "error", err)
+		return fmt.Errorf("value validation failed for node %s: %w", nodeID, err)
 	}
 
 	// Convert value to proper OPC-UA type based on node's data type
