@@ -454,6 +454,56 @@ func TestWritePropagatesValidationFailure(t *testing.T) {
 	}
 }
 
+// TestReadReturnsPerNodePartialResults covers P1-1 (findings.md H3, high):
+// one bad-status node in a batch must not discard the good results for
+// every other node in the same batch, and no top-level error should be
+// returned for per-node status failures (only transport-level failures do).
+func TestReadReturnsPerNodePartialResults(t *testing.T) {
+	cfg := &config.OPCUAConfig{
+		Endpoint:       "opc.tcp://localhost:4840",
+		AuthMode:       "anonymous",
+		SecurityPolicy: "None",
+		SecurityMode:   "None",
+		RequestTimeout: 30 * time.Second,
+		SessionTimeout: 60 * time.Second,
+		MaxRetries:     3,
+		RetryDelay:     1 * time.Second,
+	}
+
+	client := NewClient(cfg)
+	mock := &mockOpcuaClient{
+		readFunc: func(ctx context.Context, req *ua.ReadRequest) (*ua.ReadResponse, error) {
+			return &ua.ReadResponse{
+				Results: []*ua.DataValue{
+					{Status: ua.StatusOK, Value: ua.MustVariant(int32(42))},
+					{Status: ua.StatusBadNodeIDUnknown, Value: ua.MustVariant(int32(0))},
+					{Status: ua.StatusOK, Value: ua.MustVariant(int32(7))},
+				},
+			}, nil
+		},
+	}
+	client.client = mock
+	client.connected = true
+
+	results, err := client.Read(context.Background(), []string{"i=1", "i=2", "i=3"})
+	if err != nil {
+		t.Fatalf("Read() unexpected top-level error for a mixed-status batch: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("Read() returned %d results, want 3 (one per requested node)", len(results))
+	}
+
+	if results[0].Status != ua.StatusOK || results[0].Value.Value() != int32(42) {
+		t.Errorf("results[0] = %+v, want status OK / value 42", results[0])
+	}
+	if results[1].Status == ua.StatusOK {
+		t.Errorf("results[1] expected a bad status, got OK")
+	}
+	if results[2].Status != ua.StatusOK || results[2].Value.Value() != int32(7) {
+		t.Errorf("results[2] = %+v, want status OK / value 7", results[2])
+	}
+}
+
 func TestParseNodeIDs(t *testing.T) {
 	tests := []struct {
 		name     string

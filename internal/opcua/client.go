@@ -271,13 +271,10 @@ func (c *Client) Read(ctx context.Context, nodeIDs []string) ([]*ua.DataValue, e
 		return nil, fmt.Errorf("failed to read from OPC-UA server: %w", err)
 	}
 
-	// Check for errors in response
-	for i, result := range resp.Results {
-		if result.Status != ua.StatusOK {
-			return nil, fmt.Errorf("read failed for node %s: %s", nodeIDs[i], result.Status)
-		}
-	}
-
+	// Return all per-node results as-is, including bad-status ones: one
+	// bad node must not discard the good results in the same batch
+	// (findings.md H3). Only a transport-level failure (handled above)
+	// produces a top-level error.
 	return resp.Results, nil
 }
 

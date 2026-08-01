@@ -356,7 +356,11 @@ func (s *Server) handleRead(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to read from OPC-UA server: %v", err)), nil
 	}
 
-	// Format results
+	// Format results. Since P1-1, Client.Read returns one result per
+	// requested node even when some have a bad per-node status (no top-level
+	// error for that case) - each node's own "status" field below already
+	// surfaces that, and result.Value is never nil (gopcua's DataValue.Decode
+	// always allocates it), so no nil-guard is needed for result.Value.Value().
 	var response []map[string]interface{}
 	for i, result := range results {
 		response = append(response, map[string]interface{}{
@@ -688,6 +692,8 @@ func (s *Server) handleGetValue(ctx context.Context, req mcp.CallToolRequest) (*
 		return mcp.NewToolResultError("No results returned"), nil
 	}
 
+	// Per P1-1, a bad per-node status surfaces here rather than as a
+	// top-level error - the "status" field below reflects it directly.
 	result := results[0]
 	response := map[string]interface{}{
 		"node_id":          nodeID,
