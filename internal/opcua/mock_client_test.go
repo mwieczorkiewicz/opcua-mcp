@@ -10,13 +10,15 @@ import (
 // responses via injectable funcs and counting calls so behavior (e.g. "no
 // write RPC attempted") can be asserted without a live OPC-UA server.
 type mockOpcuaClient struct {
-	readFunc   func(ctx context.Context, req *ua.ReadRequest) (*ua.ReadResponse, error)
-	writeFunc  func(ctx context.Context, req *ua.WriteRequest) (*ua.WriteResponse, error)
-	browseFunc func(ctx context.Context, req *ua.BrowseRequest) (*ua.BrowseResponse, error)
+	readFunc       func(ctx context.Context, req *ua.ReadRequest) (*ua.ReadResponse, error)
+	writeFunc      func(ctx context.Context, req *ua.WriteRequest) (*ua.WriteResponse, error)
+	browseFunc     func(ctx context.Context, req *ua.BrowseRequest) (*ua.BrowseResponse, error)
+	browseNextFunc func(ctx context.Context, req *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error)
 
-	readCalls   int
-	writeCalls  int
-	browseCalls int
+	readCalls       int
+	writeCalls      int
+	browseCalls     int
+	browseNextCalls int
 }
 
 func (m *mockOpcuaClient) Connect(ctx context.Context) error { return nil }
@@ -44,6 +46,14 @@ func (m *mockOpcuaClient) Browse(ctx context.Context, req *ua.BrowseRequest) (*u
 		return m.browseFunc(ctx, req)
 	}
 	return &ua.BrowseResponse{}, nil
+}
+
+func (m *mockOpcuaClient) BrowseNext(ctx context.Context, req *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error) {
+	m.browseNextCalls++
+	if m.browseNextFunc != nil {
+		return m.browseNextFunc(ctx, req)
+	}
+	return &ua.BrowseNextResponse{}, nil
 }
 
 // singleAttrReadResponse builds a ReadResponse with one OK result carrying

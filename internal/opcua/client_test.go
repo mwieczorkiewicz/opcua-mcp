@@ -541,6 +541,143 @@ func TestWriteFetchesNodeTypeInfoOnce(t *testing.T) {
 	}
 }
 
+func newTestClient(t *testing.T) *Client {
+	t.Helper()
+	cfg := &config.OPCUAConfig{
+		Endpoint:       "opc.tcp://localhost:4840",
+		AuthMode:       "anonymous",
+		SecurityPolicy: "None",
+		SecurityMode:   "None",
+		RequestTimeout: 30 * time.Second,
+		SessionTimeout: 60 * time.Second,
+		MaxRetries:     3,
+		RetryDelay:     1 * time.Second,
+	}
+	return NewClient(cfg)
+}
+
+// TestBrowseNoContinuation covers the no-regression case for P1-2: a
+// well-behaved server that returns everything in one page makes exactly one
+// Browse call and zero BrowseNext calls.
+func TestBrowseNoContinuation(t *testing.T) {
+	client := newTestClient(t)
+	mock := &mockOpcuaClient{
+		browseFunc: func(ctx context.Context, req *ua.BrowseRequest) (*ua.BrowseResponse, error) {
+			return &ua.BrowseResponse{
+				Results: []*ua.BrowseResult{
+					{
+						StatusCode: ua.StatusOK,
+						References: []*ua.ReferenceDescription{
+							{BrowseName: &ua.QualifiedName{Name: "child1"}},
+							{BrowseName: &ua.QualifiedName{Name: "child2"}},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+	client.client = mock
+	client.connected = true
+
+	refs, err := client.Browse(context.Background(), "i=85")
+	if err != nil {
+		t.Fatalf("Browse() unexpected error: %v", err)
+	}
+	if len(refs) != 2 {
+		t.Fatalf("Browse() returned %d references, want 2", len(refs))
+	}
+	if mock.browseCalls != 1 {
+		t.Errorf("Browse() issued %d Browse call(s), want 1", mock.browseCalls)
+	}
+	if mock.browseNextCalls != 0 {
+		t.Errorf("Browse() issued %d BrowseNext call(s), want 0 for a single-page result", mock.browseNextCalls)
+	}
+}
+
+// TestBrowseFollowsContinuationPoint covers P1-2 (findings.md H5, medium):
+// Browse must follow BrowseNext continuation points instead of silently
+// truncating results past RequestedMaxReferencesPerNode.
+func TestBrowseFollowsContinuationPoint(t *testing.T) {
+	client := newTestClient(t)
+	mock := &mockOpcuaClient{
+		browseFunc: func(ctx context.Context, req *ua.BrowseRequest) (*ua.BrowseResponse, error) {
+			return &ua.BrowseResponse{
+				Results: []*ua.BrowseResult{
+					{
+						StatusCode:        ua.StatusOK,
+						ContinuationPoint: []byte("page-2"),
+						References: []*ua.ReferenceDescription{
+							{BrowseName: &ua.QualifiedName{Name: "child1"}},
+						},
+					},
+				},
+			}, nil
+		},
+		browseNextFunc: func(ctx context.Context, req *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error) {
+			if len(req.ContinuationPoints) != 1 || string(req.ContinuationPoints[0]) != "page-2" {
+				t.Fatalf("BrowseNext() got continuation points %v, want [\"page-2\"]", req.ContinuationPoints)
+			}
+			return &ua.BrowseNextResponse{
+				Results: []*ua.BrowseResult{
+					{
+						StatusCode: ua.StatusOK,
+						// No continuation point: this is the last page.
+						References: []*ua.ReferenceDescription{
+							{BrowseName: &ua.QualifiedName{Name: "child2"}},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+	client.client = mock
+	client.connected = true
+
+	refs, err := client.Browse(context.Background(), "i=85")
+	if err != nil {
+		t.Fatalf("Browse() unexpected error: %v", err)
+	}
+	if len(refs) != 2 {
+		t.Fatalf("Browse() returned %d references across 2 pages, want 2", len(refs))
+	}
+	if refs[0].BrowseName.Name != "child1" || refs[1].BrowseName.Name != "child2" {
+		t.Errorf("Browse() references = [%q, %q], want [child1, child2]", refs[0].BrowseName.Name, refs[1].BrowseName.Name)
+	}
+	if mock.browseCalls != 1 || mock.browseNextCalls != 1 {
+		t.Errorf("Browse() issued %d Browse and %d BrowseNext calls, want 1 and 1", mock.browseCalls, mock.browseNextCalls)
+	}
+}
+
+// TestBrowseContinuationLoopIsBounded covers P1-2's iteration-cap acceptance
+// criterion: a server that never exhausts its continuation point must not
+// hang Browse() forever.
+func TestBrowseContinuationLoopIsBounded(t *testing.T) {
+	client := newTestClient(t)
+	mock := &mockOpcuaClient{
+		browseFunc: func(ctx context.Context, req *ua.BrowseRequest) (*ua.BrowseResponse, error) {
+			return &ua.BrowseResponse{
+				Results: []*ua.BrowseResult{{StatusCode: ua.StatusOK, ContinuationPoint: []byte("more")}},
+			}, nil
+		},
+		browseNextFunc: func(ctx context.Context, req *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error) {
+			// Always claims there's another page - a misbehaving/malicious server.
+			return &ua.BrowseNextResponse{
+				Results: []*ua.BrowseResult{{StatusCode: ua.StatusOK, ContinuationPoint: []byte("more")}},
+			}, nil
+		},
+	}
+	client.client = mock
+	client.connected = true
+
+	_, err := client.Browse(context.Background(), "i=85")
+	if err == nil {
+		t.Fatal("Browse() against a server that never exhausts its continuation point expected an error, got nil")
+	}
+	if mock.browseNextCalls != maxBrowseNextIterations {
+		t.Errorf("Browse() issued %d BrowseNext calls, want exactly the %d-iteration cap", mock.browseNextCalls, maxBrowseNextIterations)
+	}
+}
+
 func TestParseNodeIDs(t *testing.T) {
 	tests := []struct {
 		name     string

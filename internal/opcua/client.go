@@ -27,6 +27,7 @@ type opcuaClient interface {
 	Read(ctx context.Context, req *ua.ReadRequest) (*ua.ReadResponse, error)
 	Write(ctx context.Context, req *ua.WriteRequest) (*ua.WriteResponse, error)
 	Browse(ctx context.Context, req *ua.BrowseRequest) (*ua.BrowseResponse, error)
+	BrowseNext(ctx context.Context, req *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error)
 }
 
 // var _ opcuaClient documents (and fails to compile if broken by an upstream
@@ -380,17 +381,57 @@ func (c *Client) Browse(ctx context.Context, nodeID string) ([]*ua.ReferenceDesc
 		return nil, fmt.Errorf("failed to browse OPC-UA server: %w", err)
 	}
 
-	// Check for errors in response
-	if len(resp.Results) > 0 && resp.Results[0].StatusCode != ua.StatusOK {
-		return nil, fmt.Errorf("browse failed for node %s: %s", nodeID, resp.Results[0].StatusCode)
-	}
-
 	if len(resp.Results) == 0 {
 		return nil, fmt.Errorf("no browse results returned")
 	}
 
-	return resp.Results[0].References, nil
+	// Check for errors in response
+	if resp.Results[0].StatusCode != ua.StatusOK {
+		return nil, fmt.Errorf("browse failed for node %s: %s", nodeID, resp.Results[0].StatusCode)
+	}
+
+	references := append([]*ua.ReferenceDescription(nil), resp.Results[0].References...)
+	continuationPoint := resp.Results[0].ContinuationPoint
+
+	// Follow BrowseNext continuation points so a node with more references
+	// than RequestedMaxReferencesPerNode isn't silently truncated
+	// (findings.md H5). Bounded by both ctx and a hard iteration cap so a
+	// misbehaving server that never exhausts its continuation point can't
+	// hang this call forever.
+	for iterations := 0; len(continuationPoint) > 0; iterations++ {
+		if iterations >= maxBrowseNextIterations {
+			return nil, fmt.Errorf("browse for node %s exceeded %d BrowseNext continuations without exhausting results", nodeID, maxBrowseNextIterations)
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("browse for node %s cancelled while following continuation points: %w", nodeID, err)
+		}
+
+		nextResp, err := client.BrowseNext(ctx, &ua.BrowseNextRequest{
+			ContinuationPoints: [][]byte{continuationPoint},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to continue browse for node %s: %w", nodeID, err)
+		}
+		if len(nextResp.Results) == 0 {
+			return nil, fmt.Errorf("no BrowseNext results returned for node %s", nodeID)
+		}
+
+		next := nextResp.Results[0]
+		if next.StatusCode != ua.StatusOK {
+			return nil, fmt.Errorf("BrowseNext failed for node %s: %s", nodeID, next.StatusCode)
+		}
+
+		references = append(references, next.References...)
+		continuationPoint = next.ContinuationPoint
+	}
+
+	return references, nil
 }
+
+// maxBrowseNextIterations bounds the BrowseNext continuation loop in Browse,
+// independent of ctx's deadline, so a misbehaving or malicious server that
+// never returns an empty ContinuationPoint can't cause an unbounded loop.
+const maxBrowseNextIterations = 10000
 
 // GetNodeClass returns the node class of the specified node
 func (c *Client) GetNodeClass(ctx context.Context, nodeID string) (ua.NodeClass, error) {
