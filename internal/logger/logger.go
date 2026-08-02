@@ -177,35 +177,42 @@ func Get() *Logger {
 	return globalLogger
 }
 
-// Global convenience functions
+// Debug logs a message at debug level on the global logger.
 func Debug(msg string, args ...interface{}) {
 	Get().Debug(msg, args...)
 }
 
+// Info logs a message at info level on the global logger.
 func Info(msg string, args ...interface{}) {
 	Get().Info(msg, args...)
 }
 
+// Warn logs a message at warn level on the global logger.
 func Warn(msg string, args ...interface{}) {
 	Get().Warn(msg, args...)
 }
 
+// Error logs a message at error level on the global logger.
 func Error(msg string, args ...interface{}) {
 	Get().Error(msg, args...)
 }
 
+// Fatal logs a message at fatal level on the global logger, then exits.
 func Fatal(msg string, args ...interface{}) {
 	Get().Fatal(msg, args...)
 }
 
+// WithFields returns a logger derived from the global logger with fields attached.
 func WithFields(fields map[string]interface{}) *Logger {
 	return Get().WithFields(fields)
 }
 
+// WithField returns a logger derived from the global logger with a single field attached.
 func WithField(key string, value interface{}) *Logger {
 	return Get().WithField(key, value)
 }
 
+// WithError returns a logger derived from the global logger with an error field attached.
 func WithError(err error) *Logger {
 	return Get().WithError(err)
 }
