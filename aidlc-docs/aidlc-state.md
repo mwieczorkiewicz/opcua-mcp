@@ -4,7 +4,7 @@
 - **Project**: opcua-mcp
 - **Project Type**: Brownfield
 - **Start Date**: 2026-08-02
-- **Current Stage**: INCEPTION - Requirements Analysis (in progress)
+- **Current Stage**: INCEPTION - Workflow Planning (in progress)
 
 ## Workspace State
 - **Existing Code**: Yes
@@ -37,13 +37,19 @@ per the approved plan at `/Users/mikolajwieczorkiewicz/.claude/plans/lucky-huggi
 - [x] Reverse Engineering - Completed on 2026-08-02T00:00:00Z
 - **Artifacts Location**: aidlc-docs/inception/reverse-engineering/
 
+## Extension Configuration
+| Extension | Enabled | Decided At |
+|---|---|---|
+| Resiliency Baseline | Yes (most cloud-deployment sub-rules N/A — experimental/lab tool, no hosted deployment target; RESILIENCY-10 dependency-isolation/graceful-degradation is the applicable one) | Requirements Analysis |
+| Security Baseline | Yes | Requirements Analysis |
+| Property-Based Testing | Yes (full enforcement, not Partial) | Requirements Analysis |
+
 ## Stage Progress
 - [x] Workspace Detection — brownfield confirmed, no prior AIDLC artifacts, proceeding to Reverse Engineering
 - [x] Reverse Engineering — 8 artifacts generated, approved by user 2026-08-02
-- [ ] Requirements Analysis — in progress
-- [ ] Requirements Analysis
-- [ ] User Stories (assess)
-- [ ] Workflow Planning
+- [x] Requirements Analysis — requirements.md generated, approved by user 2026-08-02
+- [x] User Stories — assessed and skipped (single user type, well-defined tool contracts, no divergent user journeys); user accepted this recommendation
+- [ ] Workflow Planning — in progress
 - [ ] Application Design (assess)
 - [ ] Units Generation (assess)
 - [ ] Construction (per unit)
