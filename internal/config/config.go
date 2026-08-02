@@ -19,6 +19,9 @@ type Config struct {
 
 	// Search and discovery configuration
 	Search SearchConfig `envPrefix:"SEARCH_"`
+
+	// Persistent store configuration (values/typeinfo/browse/subscriptions cache)
+	Store StoreConfig `envPrefix:"STORE_"`
 }
 
 // ServerConfig holds server-specific configuration
@@ -97,6 +100,31 @@ type SearchConfig struct {
 	EnableCache  bool          `env:"ENABLE_CACHE" envDefault:"true"`
 	CacheTTL     time.Duration `env:"CACHE_TTL" envDefault:"5m"`
 	MaxCacheSize int           `env:"MAX_CACHE_SIZE" envDefault:"10000"`
+}
+
+// StoreConfig holds persistent store (bbolt) configuration
+type StoreConfig struct {
+	// DBPath is the bbolt database file path.
+	DBPath string `env:"DB_PATH" envDefault:"mcp_opcua_store.db"`
+
+	// OpenTimeout bounds how long Open waits to acquire the file lock -
+	// mandatory non-zero, or a stale lock from a prior ungraceful shutdown
+	// hangs bbolt.Open (and hence stdio startup) indefinitely.
+	OpenTimeout time.Duration `env:"OPEN_TIMEOUT" envDefault:"5s"`
+
+	// TypeInfoTTL is how long a cached node-type-info entry is considered fresh.
+	TypeInfoTTL time.Duration `env:"TYPEINFO_TTL" envDefault:"24h"`
+
+	// BrowseTTL is how long a cached browse result is considered fresh.
+	BrowseTTL time.Duration `env:"BROWSE_TTL" envDefault:"5m"`
+
+	// BatchWindow/BatchMaxItems bound the subscription notification pump's
+	// batching of values-bucket writes.
+	BatchWindow   time.Duration `env:"BATCH_WINDOW" envDefault:"25ms"`
+	BatchMaxItems int           `env:"BATCH_MAX_ITEMS" envDefault:"250"`
+
+	// NotifyChanBuffer sizes the shared subscription notification channel.
+	NotifyChanBuffer int `env:"NOTIFY_CHAN_BUFFER" envDefault:"1024"`
 }
 
 // Load loads configuration from environment variables

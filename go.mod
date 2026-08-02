@@ -7,6 +7,8 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/gopcua/opcua v0.9.0
 	github.com/mark3labs/mcp-go v0.39.1
+	go.etcd.io/bbolt v1.5.0
+	pgregory.net/rapid v1.3.0
 )
 
 require (
@@ -41,7 +43,6 @@ require (
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	go.etcd.io/bbolt v1.4.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -316,4 +316,25 @@ func TestDefaultValues(t *testing.T) {
 	if cfg.MCP.HTTPPath != "/mcp" {
 		t.Errorf("Expected default HTTP path '/mcp', got '%s'", cfg.MCP.HTTPPath)
 	}
+	if cfg.Store.DBPath != "mcp_opcua_store.db" {
+		t.Errorf("Expected default store DB path 'mcp_opcua_store.db', got '%s'", cfg.Store.DBPath)
+	}
+	if cfg.Store.OpenTimeout != 5*time.Second {
+		t.Errorf("Expected default store open timeout 5s, got %v", cfg.Store.OpenTimeout)
+	}
+	if cfg.Store.TypeInfoTTL != 24*time.Hour {
+		t.Errorf("Expected default store typeinfo TTL 24h, got %v", cfg.Store.TypeInfoTTL)
+	}
+	if cfg.Store.BrowseTTL != 5*time.Minute {
+		t.Errorf("Expected default store browse TTL 5m, got %v", cfg.Store.BrowseTTL)
+	}
+	if cfg.Store.BatchWindow != 25*time.Millisecond {
+		t.Errorf("Expected default store batch window 25ms, got %v", cfg.Store.BatchWindow)
+	}
+	if cfg.Store.BatchMaxItems != 250 {
+		t.Errorf("Expected default store batch max items 250, got %d", cfg.Store.BatchMaxItems)
+	}
+	if cfg.Store.NotifyChanBuffer != 1024 {
+		t.Errorf("Expected default store notify chan buffer 1024, got %d", cfg.Store.NotifyChanBuffer)
+	}
 }
