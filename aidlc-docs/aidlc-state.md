@@ -4,7 +4,7 @@
 - **Project**: opcua-mcp
 - **Project Type**: Brownfield
 - **Start Date**: 2026-08-02
-- **Current Stage**: CONSTRUCTION - Unit 2 (Subscription Management) - NFR Design (in progress)
+- **Current Stage**: CONSTRUCTION - Unit 2 (Subscription Management) - Code Generation complete, awaiting approval to proceed to Unit 3
 
 ## Workspace State
 - **Existing Code**: Yes
@@ -67,20 +67,14 @@ per the approved plan at `/Users/mikolajwieczorkiewicz/.claude/plans/lucky-huggi
 ### Unit 2 — Subscription Management
 - [x] Functional Design — domain-entities.md, business-rules.md, business-logic-model.md generated, approved by user 2026-08-02
 - [x] NFR Requirements — nfr-requirements.md, tech-stack-decisions.md generated, approved by user 2026-08-02
-- [x] NFR Design — nfr-design-patterns.md, logical-components.md generated, awaiting user approval
+- [x] NFR Design — nfr-design-patterns.md, logical-components.md generated, approved by user 2026-08-02
 - [x] Infrastructure Design — SKIP (no infra-as-code in this project)
-- [ ] Code Generation
+- [x] Code Generation — reconnect_watcher.go, subscription.go (SubscriptionManager, seam interfaces, notification pump), client.go extended (Subscribe, state-change channel), mock_subscription_test.go, reconnect_watcher_test.go, subscription_test.go, subscription_pbt_test.go (stateful PBT). 93 tests passing in internal/opcua. Awaiting user approval.
+
+**Unit 2 code generation complete, pending stage approval.**
 
 ### Unit 3 — Read-Through Caching & MCP Integration
-- [ ] Not started (blocked on Unit 2)
-- [ ] Infrastructure Design — SKIP (no infra-as-code in this project)
-- [ ] Code Generation
-
-### Unit 2 — Subscription Management
-- [ ] Not started (blocked on Unit 1)
-
-### Unit 3 — Read-Through Caching & MCP Integration
-- [ ] Not started (blocked on Units 1, 2)
+- [ ] Not started (blocked on Unit 2 approval)
 
 ## Units (see unit-of-work.md for full detail)
 1. **Persistent Store** (`internal/store`) — no new dependencies, foundational

@@ -311,3 +311,19 @@
 **Context**: Unit 2 Code Generation Part 1, Step 7 gate.
 
 ---
+
+## Unit 2 — Code Generation Plan Approved
+**Timestamp**: 2026-08-02T03:25:00Z
+**User Input**: "generate the code, continue"
+**AI Response**: Plan approved. Beginning Part 2 (Generation), Step 1.
+**Context**: Unit 2 Code Generation Part 1 complete, proceeding to Part 2.
+
+---
+
+## Unit 2 — Code Generation Part 2 Complete
+**Timestamp**: 2026-08-02T11:55:00Z
+**User Input**: (no new input this stage; continuing from prior approval to generate)
+**AI Response**: Executed all 12 code generation steps. Extended `opcuaClient` with `Subscribe`; added `stateCh`/`SetStateChangeChannel`/`Client.Subscribe` to `client.go`; created `reconnect_watcher.go` (BR-5, BR-8) and `subscription.go` (`SubscriptionManager`, seam interfaces, notification pump — BR-1..BR-4, BR-6, BR-7); extended the mock seam (`mock_subscription_test.go`) and `mock_client_test.go`; added example-based tests (`reconnect_watcher_test.go`, `subscription_test.go`) and a stateful property-based test (`subscription_pbt_test.go`, PBT-06) verifying `ListSubscriptions()`/`intervalGroup.RefCount` invariants across random Subscribe/Unsubscribe sequences. Two documented deviations from the approved design: `NewSubscriptionManager` builds its own `ReconnectWatcher` internally (avoids a constructor chicken-and-egg problem since the watcher's callback must reference the manager), and `ListSubscriptions()` drops its `error` return (in-memory reads can't fail). Full verification green: `go build ./... && go vet ./... && gofmt -l . && go test -race ./...` — 93 tests in `internal/opcua` (all packages passing), total suite runtime ~28-31s dominated by the PBT test's per-trial bbolt setup, confirmed consistent with `pgregory.net/rapid`'s own idiomatic test structure. Created `aidlc-docs/construction/unit-2-subscription-management/code/summary.md`, marked all 12 code-generation-plan.md steps `[x]`, updated `aidlc-state.md`. Presenting standardized 2-option completion message.
+**Context**: Unit 2 Code Generation Step 12 (documentation summary) and stage-completion gate, awaiting explicit approval before proceeding to Unit 3.
+
+---
