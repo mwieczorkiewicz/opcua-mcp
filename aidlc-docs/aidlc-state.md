@@ -4,7 +4,7 @@
 - **Project**: opcua-mcp
 - **Project Type**: Brownfield
 - **Start Date**: 2026-08-02
-- **Current Stage**: INCEPTION - Workflow Planning (in progress)
+- **Current Stage**: CONSTRUCTION - Unit 1 (Persistent Store) - Functional Design (in progress)
 
 ## Workspace State
 - **Existing Code**: Yes
@@ -49,8 +49,28 @@ per the approved plan at `/Users/mikolajwieczorkiewicz/.claude/plans/lucky-huggi
 - [x] Reverse Engineering — 8 artifacts generated, approved by user 2026-08-02
 - [x] Requirements Analysis — requirements.md generated, approved by user 2026-08-02
 - [x] User Stories — assessed and skipped (single user type, well-defined tool contracts, no divergent user journeys); user accepted this recommendation
-- [ ] Workflow Planning — in progress
-- [ ] Application Design (assess)
-- [ ] Units Generation (assess)
-- [ ] Construction (per unit)
-- [ ] Build and Test
+- [x] Workflow Planning — execution-plan.md generated, awaiting user approval
+- [x] Application Design — 5 artifacts generated, awaiting user approval
+- [x] Units Generation — 3 units defined, approved by user 2026-08-02
+- [ ] Build and Test — EXECUTE (planned, after all 3 units)
+
+## Construction Progress
+### Unit 1 — Persistent Store
+- [ ] Functional Design — in progress
+- [ ] NFR Requirements
+- [ ] NFR Design
+- [ ] Infrastructure Design — SKIP (no infra-as-code in this project)
+- [ ] Code Generation
+
+### Unit 2 — Subscription Management
+- [ ] Not started (blocked on Unit 1)
+
+### Unit 3 — Read-Through Caching & MCP Integration
+- [ ] Not started (blocked on Units 1, 2)
+
+## Units (see unit-of-work.md for full detail)
+1. **Persistent Store** (`internal/store`) — no new dependencies, foundational
+2. **Subscription Management** (`SubscriptionManager` + `ReconnectWatcher`) — depends on Unit 1
+3. **Read-Through Caching & MCP Integration** (`CachingClient`, `mcp.Server`, `cmd/opcua-mcp.go`, Docker/README, integration tests) — depends on Units 1 and 2
+
+Build order: strictly sequential, Unit 1 → Unit 2 → Unit 3 (per user's Units Generation answers).

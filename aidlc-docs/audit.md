@@ -63,3 +63,83 @@
 **Context**: Requirements Analysis stage complete.
 
 ---
+
+## Workflow Planning
+**Timestamp**: 2026-08-02T00:45:00Z
+**User Input**: (n/a — AI-initiated per Workflow Planning's always-execute rule)
+**AI Response**: Generated `aidlc-docs/inception/plans/execution-plan.md`: detailed scope/impact/risk analysis (Medium risk, additive feature, Easy-to-Moderate rollback), component relationship table (7 components, primary/modified/dependent/supporting), a dependency-ordered package update sequence (store → config → subscription.go → client/discovery caching → server.go → cmd wiring → integration tests/docs), and phase decisions: Application Design EXECUTE (two genuinely new components need method/dependency definition), Units Generation EXECUTE (new schemas, new API surface, complex state management, 6+ files affected), and per-unit CONSTRUCTION expectations (Functional Design/NFR Requirements/NFR Design EXECUTE, Infrastructure Design SKIP — no infra-as-code in this project). Presenting for approval.
+**Context**: Workflow Planning, awaiting explicit approval before proceeding to Application Design.
+
+---
+
+## Workflow Planning — Approval
+**Timestamp**: 2026-08-02T00:50:00Z
+**User Input**: "continue"
+**AI Response**: Execution plan approved as-is. Proceeding to Application Design.
+**Context**: Workflow Planning stage complete.
+
+---
+
+## Application Design — Plan Presented
+**Timestamp**: 2026-08-02T00:55:00Z
+**User Input**: (n/a — AI-initiated per Application Design Steps 2-6)
+**AI Response**: Created `aidlc-docs/inception/plans/application-design-plan.md` with 5 design questions: reconnect-watcher component boundary (embedded vs. separate), store API shape (generic vs. per-bucket-typed methods), read-through caching placement (inside Client vs. a decorator/wrapper), store access abstraction (concrete vs. interface for mocking), and confirming SubscriptionManager follows the established mutex+snapshot concurrency convention. Presenting for answers; gate before generating final design artifacts.
+**Context**: Application Design Step 6/7 gate.
+
+---
+
+## Application Design — Questions Answered, Artifacts Generated
+**Timestamp**: 2026-08-02T01:00:00Z
+**User Input**: "continue, unless my answers make no sense" (answers: Q1=B separate ReconnectWatcher component, Q2=B strongly-typed per-bucket store methods, Q3=B separate CachingClient decorator, Q4=B store interface for mocking, Q5=A follow established mutex+snapshot convention)
+**AI Response**: Reviewed all 5 answers — coherent, consistent with each other and with existing codebase conventions, no contradictions; proceeded without a further round-trip. While designing, caught and corrected a scope inconsistency in requirements.md: FR-1.3 listed a 5th "nodes" bucket carried over from an earlier sketch about discovery-cache warm-loading, never actually requested by any functional requirement in this pass — dropped to 4 buckets, flagged explicitly rather than silently building an unused bucket. Generated all 5 mandatory Application Design artifacts: components.md, component-methods.md, services.md, component-dependency.md, application-design.md (consolidated). Presenting for approval.
+**Context**: Application Design Steps 8-12, awaiting explicit approval before proceeding to Units Generation.
+
+---
+
+## Application Design — Approval
+**Timestamp**: 2026-08-02T01:05:00Z
+**User Input**: "approving, go on"
+**AI Response**: Application design approved as-is. Proceeding to Units Generation.
+**Context**: Application Design stage complete.
+
+---
+
+## Units Generation — Plan Presented
+**Timestamp**: 2026-08-02T01:10:00Z
+**User Input**: (n/a — AI-initiated per Units Generation Part 1)
+**AI Response**: Created `aidlc-docs/inception/plans/unit-of-work-plan.md` proposing a 3-unit decomposition (Unit 1: Persistent Store, Unit 2: Subscription Management, Unit 3: Read-Through Caching & MCP Integration) derived directly from application-design.md's dependency graph, with 5 questions covering grouping, sequencing, team alignment, technical considerations, and domain boundaries. Since User Stories was skipped, adapted the story-map artifact to map FRs (from requirements.md) to units instead. Presenting for answers.
+**Context**: Units Generation Part 1, Step 5/6 gate.
+
+---
+
+## Units Generation — Questions Answered
+**Timestamp**: 2026-08-02T01:15:00Z
+**User Input**: "continue" (answers: Q1=A proposed 3-unit split as-is, Q2=A strictly sequential, Q3=A solo work, Q4=A no differing deployment treatment, Q5=A domain boundaries match)
+**AI Response**: All 5 answers confirm the proposed decomposition with no ambiguity or contradiction. Proceeding directly to Part 2 (Generation): unit-of-work.md, unit-of-work-dependency.md, unit-of-work-story-map.md (FR-to-unit map).
+**Context**: Units Generation Part 1 complete, proceeding to Part 2.
+
+---
+
+## Units Generation — Artifacts Generated
+**Timestamp**: 2026-08-02T01:20:00Z
+**User Input**: (n/a — executing approved Part 1 plan)
+**AI Response**: Generated unit-of-work.md (3 units with full responsibility/component/dependency/deliverable detail), unit-of-work-dependency.md (dependency matrix, sequential build order, coordination points, testing checkpoints, rollback strategy), unit-of-work-story-map.md (FR/NFR-to-unit map, since no user stories exist for this pass — confirmed no orphaned requirements). Presenting for approval before proceeding to CONSTRUCTION phase.
+**Context**: Units Generation Part 2 complete, awaiting explicit approval before proceeding to Construction (starting with Unit 1).
+
+---
+
+## Units Generation — Approval
+**Timestamp**: 2026-08-02T01:25:00Z
+**User Input**: "approve, continue"
+**AI Response**: Units generation approved as-is. Proceeding to CONSTRUCTION phase, Unit 1 (Persistent Store): Functional Design.
+**Context**: Units Generation stage complete. INCEPTION phase complete in full.
+
+---
+
+## Unit 1 (Persistent Store) — Functional Design Plan Presented
+**Timestamp**: 2026-08-02T01:30:00Z
+**User Input**: (n/a — AI-initiated per Functional Design Steps 2-4)
+**AI Response**: Created `aidlc-docs/construction/plans/unit-1-persistent-store-functional-design-plan.md` with 5 questions: whether Store enforces TTL/expiry itself vs. leaving it to callers, JSON round-trip type-fidelity tradeoff for ValueEntry.Value, input validation stance, additional locking beyond bbolt's own transactions, and Open() error-wrapping convention. Presenting for answers; gate before generating functional design artifacts.
+**Context**: Unit 1 Functional Design Step 4/5 gate.
+
+---
