@@ -4,8 +4,8 @@ A Model Context Protocol (MCP) server that enables integration between OPC-UA se
 
 ## Changelog
 
-Notable behavior changes from the ongoing `docs/plan/plan.md` hardening pass
-(not yet a full rewrite - see that plan for the complete list of in-flight work):
+Notable behavior changes from a recent correctness/robustness hardening pass
+over the OPC-UA client, MCP server, and node discovery:
 
 - **`opcua_write` now rejects type-mismatched values.** Previously, a value
   that failed data-type validation against the target node was written
@@ -15,6 +15,22 @@ Notable behavior changes from the ongoing `docs/plan/plan.md` hardening pass
 - **stdio transport no longer logs to stdout**, even if `SERVER_LOG_OUTPUT`
   is left at its default (`stdout`) or set explicitly - stdout carries the
   MCP JSON-RPC stream in stdio mode, and logs there previously corrupted it.
+- **`opcua_read` no longer discards an entire batch on one bad-status node.**
+  Each requested node now gets its own result (with its own `status` field);
+  previously a single failing node aborted the whole read, discarding
+  successfully-read values for every other node in the batch.
+- **`opcua_browse`/`opcua_browse_nodes` no longer silently truncate results.**
+  A node with more than 1000 references previously lost everything past that
+  cap with no error or indication; continuation points are now followed
+  automatically.
+- **Node discovery no longer wipes its cache before rebuilding it.**
+  Concurrent reads (via any `opcua_*` search/lookup tool) during a discovery
+  cycle no longer risk seeing a spuriously empty cache. Nodes removed from
+  the live server are now actually removed from the search index too -
+  previously the index only ever grew.
+- The OPC-UA client's connection state is now safe for concurrent access
+  from multiple goroutines (the background discovery worker and MCP
+  tool-handler calls both touch it).
 
 ## Features
 
@@ -26,7 +42,9 @@ Notable behavior changes from the ongoing `docs/plan/plan.md` hardening pass
 - **MCP Resources**: Access to OPC-UA node data and server information as resources
 - **Configuration Management**: Environment variable-based configuration using caarlos0/env
 - **Docker Support**: Containerized deployment with Docker
-- **Comprehensive Testing**: Unit tests with reasonable coverage
+- **Test Coverage**: 120+ unit tests across configuration, the OPC-UA client,
+  MCP tool handlers, and node discovery, including concurrency (`-race`)
+  coverage of the client's connection state and discovery's cache
 
 ## Architecture
 
@@ -334,6 +352,63 @@ Connect to OPC-UA server.
 
 ### `opcua_disconnect`
 Disconnect from OPC-UA server.
+
+**Parameters:** None
+
+### `opcua_get_value`
+Get the value of a single variable by node ID. A convenience wrapper over
+`opcua_read` for the single-node case.
+
+**Parameters:**
+- `node_id` (required): Node ID of the variable to read
+
+### `opcua_browse_nodes`
+Recursively browse OPC-UA nodes starting from a given node, up to a depth
+limit. Unlike `opcua_browse` (one level only), this walks the hierarchy and
+nests each level's children under its parent in the response.
+
+**Parameters:**
+- `node_id` (optional, default `i=85`): Node ID to start browsing from
+- `max_depth` (optional, default `3`, range `1`-`10`): Maximum depth to browse
+
+### `opcua_get_value_by_name`
+Get the value of a variable found via the discovery cache's browse name
+index, without needing its node ID.
+
+**Parameters:**
+- `browse_name` (required): Browse name of the variable to read
+
+### `opcua_find_similar_nodes`
+Find nodes with a browse name similar to the given one, using a tiered
+match strategy (exact, then partial, then fuzzy).
+
+**Parameters:**
+- `browse_name` (required): Browse name to search for
+- `max_results` (optional, default `10`, range `1`-`100`): Maximum results to return
+
+### `opcua_discovery_stats`
+Get statistics about the background node discovery cache (total nodes,
+depth distribution, and whether discovery/search/caching are enabled).
+
+**Parameters:** None
+
+### `opcua_force_discovery`
+Force an immediate discovery refresh instead of waiting for the next
+scheduled cycle (`SEARCH_DISCOVERY_INTERVAL`).
+
+**Parameters:** None
+
+### `opcua_debug_search`
+Diagnostic tool that reports cache/search-index statistics and runs several
+search strategies against a browse name, to help debug why a node isn't
+being found.
+
+**Parameters:**
+- `browse_name` (required): Browse name to debug search for
+
+### `opcua_ensure_server_nodes`
+Diagnostic tool that verifies the standard `Server`/`ServerStatus` nodes are
+indexed, forcing a discovery refresh if they aren't.
 
 **Parameters:** None
 
