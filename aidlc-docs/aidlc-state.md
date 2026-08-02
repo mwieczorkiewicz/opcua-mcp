@@ -4,7 +4,7 @@
 - **Project**: opcua-mcp
 - **Project Type**: Brownfield
 - **Start Date**: 2026-08-02
-- **Current Stage**: CONSTRUCTION - Unit 1 (Persistent Store) - NFR Design (in progress)
+- **Current Stage**: CONSTRUCTION - Unit 1 (Persistent Store) - Code Generation (in progress)
 
 ## Workspace State
 - **Existing Code**: Yes
@@ -58,8 +58,11 @@ per the approved plan at `/Users/mikolajwieczorkiewicz/.claude/plans/lucky-huggi
 ### Unit 1 — Persistent Store
 - [x] Functional Design — domain-entities.md, business-rules.md, business-logic-model.md generated, approved by user 2026-08-02
 - [x] NFR Requirements — nfr-requirements.md, tech-stack-decisions.md generated, approved by user 2026-08-02
-- [x] NFR Design — nfr-design-patterns.md, logical-components.md generated, awaiting user approval
+- [x] NFR Design — nfr-design-patterns.md, logical-components.md generated, approved by user 2026-08-02
 - [x] Infrastructure Design — SKIP (no infra-as-code in this project)
+- [x] Code Generation — internal/store package created (types.go, value_encoding.go, store.go + tests), StoreConfig added, bbolt promoted to direct (v1.5.0), rapid added (v1.3.0). 154 tests passing, 85.5% coverage on internal/store. Awaiting user approval.
+
+**Unit 1 COMPLETE (pending final approval)** — next: Unit 2 (Subscription Management)
 - [ ] Infrastructure Design — SKIP (no infra-as-code in this project)
 - [ ] Code Generation
 

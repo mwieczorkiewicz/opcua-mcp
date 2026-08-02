@@ -17,7 +17,7 @@ already exists (modify in-place); `internal/store/` doesn't exist yet
 
 ## Steps
 
-- [ ] **Step 1 — Dependency updates**: `go get go.etcd.io/bbolt@v1.5.0` (promote
+- [x] **Step 1 — Dependency updates**: `go get go.etcd.io/bbolt@v1.5.0` (promote
       to direct, per `tech-stack-decisions.md`); `go get pgregory.net/rapid@v1.3.0`
       (new test-only direct dependency); `go mod tidy`. Verify the bbolt
       v1.4.0→v1.5.0 diff doesn't change any of the API surface verified
@@ -25,7 +25,7 @@ already exists (modify in-place); `internal/store/` doesn't exist yet
       `CreateBucketIfNotExists`/`Get`/`Put`/`Delete`/`ForEach`/`Close`)
       before proceeding — same discipline as the gopcua upgrade.
 
-- [ ] **Step 2 — Config**: add `StoreConfig` struct to
+- [x] **Step 2 — Config**: add `StoreConfig` struct to
       `internal/config/config.go` (`envPrefix "STORE_"`): `DBPath`
       (default `mcp_opcua_store.db`), `OpenTimeout` (default `5s`),
       `TypeInfoTTL` (default `24h`), `BrowseTTL` (default `5m`),
@@ -36,18 +36,18 @@ already exists (modify in-place); `internal/store/` doesn't exist yet
       one cohesive config struct per `requirements.md` FR-5.1, but consumed
       by Units 2/3.)
 
-- [ ] **Step 3 — Domain entities**: create `internal/store/types.go` per
+- [x] **Step 3 — Domain entities**: create `internal/store/types.go` per
       `domain-entities.md` — `ValueEntry`, `TypeInfoEntry`, `BrowseEntry`,
       `BrowseReference`, `SubscriptionIntent`, `valueKind` constants,
       `encodedValue` struct.
 
-- [ ] **Step 4 — Value encoding**: create `internal/store/value_encoding.go`
+- [x] **Step 4 — Value encoding**: create `internal/store/value_encoding.go`
       — `encode(interface{}) (encodedValue, error)` / `decode(encodedValue)
       (interface{}, error)` per `business-logic-model.md`'s algorithm
       (closed type switch, fail-fast on unknown types, recursive for
       `[]interface{}`).
 
-- [ ] **Step 5 — Store core**: create `internal/store/store.go` — `Store`
+- [x] **Step 5 — Store core**: create `internal/store/store.go` — `Store`
       struct, bucket name constants, `Open(path, timeout)`/`Close()` (no
       `ctx` — NFR Requirements scoped the `ctx` addition to the per-bucket
       CRUD methods only, not `Open`/`Close`, which are one-time
@@ -55,18 +55,18 @@ already exists (modify in-place); `internal/store/` doesn't exist yet
       flowchart (wrapped errors per BR-5, `CreateBucketIfNotExists` x4 per
       BR-6, `0600` file mode).
 
-- [ ] **Step 6 — Values bucket CRUD**: add `GetValue`/`PutValue`/
+- [x] **Step 6 — Values bucket CRUD**: add `GetValue`/`PutValue`/
       `DeleteValue` to `store.go`, using `encode`/`decode` from Step 4,
       `ctx context.Context` first parameter (NFR Requirements Q4=B),
       non-empty-key validation (BR-3).
 
-- [ ] **Step 7 — TypeInfo/Browse/Subscriptions bucket CRUD**: add
+- [x] **Step 7 — TypeInfo/Browse/Subscriptions bucket CRUD**: add
       `GetTypeInfo`/`PutTypeInfo`, `GetBrowse`/`PutBrowse`,
       `GetSubscription`/`PutSubscription`/`DeleteSubscription`/
       `ListSubscriptions` to `store.go` (direct JSON marshal/unmarshal, no
       encoding needed per BR-2's scope).
 
-- [ ] **Step 8 — Unit tests**: create `internal/store/store_test.go` —
+- [x] **Step 8 — Unit tests**: create `internal/store/store_test.go` —
       table-driven tests against a real bbolt instance in `t.TempDir()`:
       `Open`/`Close` round-trip, all 4 buckets exist after open, CRUD
       round-trip per bucket, missing-key returns `(zero, false, nil)` not
@@ -75,7 +75,7 @@ already exists (modify in-place); `internal/store/` doesn't exist yet
       hanging (mirrors the acceptance criterion the now-deleted original
       plan specified for this exact behavior).
 
-- [ ] **Step 9 — Property-based tests**: create
+- [x] **Step 9 — Property-based tests**: create
       `internal/store/value_encoding_test.go` — `rapid`-driven round-trip
       property test for `encode`/`decode` across the full closed type set
       (bool, all int/uint widths, float32/64, string, time.Time, []byte,
@@ -84,7 +84,7 @@ already exists (modify in-place); `internal/store/` doesn't exist yet
       for the fail-fast case (unsupported type returns an error) — PBT
       complements, doesn't replace, example-based coverage (PBT-10).
 
-- [ ] **Step 10 — Documentation summary**: create
+- [x] **Step 10 — Documentation summary**: create
       `aidlc-docs/construction/unit-1-persistent-store/code/summary.md`
       (markdown only, per Code Location Rules) summarizing what was built,
       linking back to the functional/NFR design docs.

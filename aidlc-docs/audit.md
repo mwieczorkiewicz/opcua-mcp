@@ -215,3 +215,19 @@
 **Context**: Code Generation Part 1, Step 7 gate.
 
 ---
+
+## Unit 1 — Code Generation Plan Approved
+**Timestamp**: 2026-08-02T02:20:00Z
+**User Input**: "continue with generation"
+**AI Response**: Plan approved. Beginning Part 2 (Generation), Step 1.
+**Context**: Code Generation Part 1 complete, proceeding to Part 2.
+
+---
+
+## Unit 1 — Code Generation Complete
+**Timestamp**: 2026-08-02T02:30:00Z
+**User Input**: (n/a — executing approved plan)
+**AI Response**: Executed all 10 steps: promoted bbolt to direct (v1.5.0, API re-verified identical to v1.4.0 first), added pgregory.net/rapid v1.3.0 (test-only, MPL-2.0 license verified), added StoreConfig to internal/config/config.go plus default-value test assertions, created internal/store/{types.go,value_encoding.go,store.go} implementing the full functional/NFR design, and internal/store/{store_test.go,value_encoding_test.go} (9 example tests + PBT round-trip tests across all 14 supported kinds using rapid, 100 generated cases each, plus fail-fast example tests). Full suite: 154 tests passing (up from 123) across 6 packages, internal/store at 85.5% coverage, go build/vet/gofmt all clean. No deviations from the plan. Presenting for approval.
+**Context**: Code Generation Part 2 complete, awaiting explicit approval before proceeding to Unit 2 (Subscription Management).
+
+---
