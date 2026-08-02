@@ -4,6 +4,24 @@ A Model Context Protocol (MCP) server that enables integration between OPC-UA se
 
 ## Changelog
 
+**New in this release**: push-based subscriptions and a persistent
+read-through cache.
+- **3 new tools**: `opcua_subscribe`, `opcua_unsubscribe`,
+  `opcua_list_subscriptions` - see [MCP Tools](#mcp-tools) below.
+  Subscriptions persist across server restarts.
+- **`opcua_read`'s response shape changed**: each result gains `source`
+  (`"live"|"cache"|"subscription"`) and `cached_at`; a new optional
+  `max_age_ms` parameter controls read-through cache tolerance. No client
+  depended on the previous exact shape.
+- **`opcua_write`/`opcua_browse_nodes` now go through the same read-through
+  cache** - a write invalidates any cached (non-subscribed) value for that
+  node; repeated browse/type-info lookups are served from cache within
+  their TTL. `SEARCH_ENABLE_CACHE=false` reproduces the old always-live
+  behavior exactly. See [Persistent Store Configuration](#persistent-store-configuration).
+- **`SearchConfig`'s dead `SEARCH_CACHE_TTL`/`SEARCH_MAX_CACHE_SIZE`
+  variables are removed** (they were never wired to any behavior) -
+  superseded by the new `STORE_*` variables.
+
 Notable behavior changes from a recent correctness/robustness hardening pass
 over the OPC-UA client, MCP server, and node discovery:
 
@@ -152,9 +170,29 @@ The server is configured using environment variables with the following structur
 | `SEARCH_INDEX_PATH` | `./search_index` | Search index directory path |
 | `SEARCH_MAX_RESULTS` | `100` | Maximum search results |
 | `SEARCH_MIN_SCORE` | `0.1` | Minimum search score threshold |
-| `SEARCH_ENABLE_CACHE` | `true` | Enable caching |
-| `SEARCH_CACHE_TTL` | `5m` | Cache time-to-live (duration format) |
-| `SEARCH_MAX_CACHE_SIZE` | `10000` | Maximum cache size |
+| `SEARCH_ENABLE_CACHE` | `true` | Master on/off switch for read-through caching (`opcua_read`/`opcua_write`/`opcua_browse_nodes`). `false` reproduces pre-caching behavior exactly - every call goes live. |
+
+### Persistent Store Configuration
+
+Backs read-through caching and subscription persistence (see
+`opcua_subscribe` above) with an on-disk [bbolt](https://github.com/etcd-io/bbolt)
+database.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STORE_DB_PATH` | `mcp_opcua_store.db` | bbolt database file path |
+| `STORE_OPEN_TIMEOUT` | `5s` | How long to wait for the file lock on open (duration format) |
+| `STORE_TYPEINFO_TTL` | `24h` | How long a cached node type-info entry is considered fresh |
+| `STORE_BROWSE_TTL` | `5m` | How long a cached browse result is considered fresh |
+| `STORE_BATCH_WINDOW` | `25ms` | How often the subscription notification pump flushes to the store |
+| `STORE_BATCH_MAX_ITEMS` | `250` | Maximum notifications flushed to the store per batch |
+| `STORE_NOTIFY_CHAN_BUFFER` | `1024` | Buffer size of the channel carrying incoming subscription notifications |
+
+If the store fails to open (e.g. a stale lock from a prior ungraceful
+shutdown, or a read-only filesystem), the server logs a warning and keeps
+running with caching forced off and `opcua_subscribe`/`opcua_unsubscribe`/
+`opcua_list_subscriptions` returning an error - every other tool is
+unaffected.
 
 ### Configuration Validation
 
@@ -287,20 +325,31 @@ OPCUA_ENDPOINT=opc.tcp://server:4840 \
 The server provides the following MCP tools:
 
 ### `opcua_read`
-Read values from OPC-UA nodes.
+Read values from OPC-UA nodes now. Subscribed nodes (see `opcua_subscribe`)
+are always served from the live push-based cache; unsubscribed nodes go
+live unless `max_age_ms` allows a cached value (`SEARCH_ENABLE_CACHE` must
+be `true`, the default). Each result's `source` field is `"live"`,
+`"cache"`, or `"subscription"`, with `cached_at` present whenever a cached
+value was returned.
 
 **Parameters:**
 - `node_ids` (required): Comma-separated list of node IDs to read
+- `max_age_ms` (optional, default `0`): Maximum acceptable age (milliseconds)
+  of a cached value before falling back to a live read. `0` means always
+  live for unsubscribed nodes.
 
 **Example:**
 ```json
 {
-  "node_ids": "ns=2;i=1,ns=2;i=2"
+  "node_ids": "ns=2;i=1,ns=2;i=2",
+  "max_age_ms": 5000
 }
 ```
 
 ### `opcua_write`
-Write values to OPC-UA nodes.
+Write values to OPC-UA nodes. On success, invalidates any read-through
+cached (non-subscribed) value for that node, so a subsequent `opcua_read`
+doesn't see a stale value.
 
 **Parameters:**
 - `node_id` (required): Node ID to write to
@@ -365,7 +414,8 @@ Get the value of a single variable by node ID. A convenience wrapper over
 ### `opcua_browse_nodes`
 Recursively browse OPC-UA nodes starting from a given node, up to a depth
 limit. Unlike `opcua_browse` (one level only), this walks the hierarchy and
-nests each level's children under its parent in the response.
+nests each level's children under its parent in the response. Each level's
+result is read-through cached (`SEARCH_ENABLE_CACHE`/`STORE_BROWSE_TTL`).
 
 **Parameters:**
 - `node_id` (optional, default `i=85`): Node ID to start browsing from
@@ -381,6 +431,44 @@ index, without needing its node ID.
 ### `opcua_find_similar_nodes`
 Find nodes with a browse name similar to the given one, using a tiered
 match strategy (exact, then partial, then fuzzy).
+
+### `opcua_subscribe`
+Subscribe to push-based live updates for one or more OPC-UA nodes.
+Subscriptions persist across server restarts and are automatically
+re-established on startup, before the server begins handling requests.
+Nodes at the same `interval_ms` share one underlying OPC-UA subscription.
+
+**Parameters:**
+- `node_ids` (required): Node IDs to subscribe to (same formats as `opcua_read`)
+- `interval_ms` (required): Publishing interval in milliseconds
+
+**Example:**
+```json
+{
+  "node_ids": "i=2258",
+  "interval_ms": 1000
+}
+```
+Response includes `subscription_id`, `accepted` (node IDs the server took),
+and `rejected` (node IDs the server refused, with a reason each) - a
+partial acceptance is not an error.
+
+### `opcua_unsubscribe`
+Cancel an active subscription, either by its `subscription_id` or by naming
+one or more of its `node_ids`. Subscriptions are removed as a whole group -
+naming one node removes every node subscribed alongside it in the same
+call to `opcua_subscribe`.
+
+**Parameters:**
+- `subscription_id` (optional): Subscription ID to cancel
+- `node_ids` (optional): Node IDs whose subscription group(s) should be
+  cancelled - provide this or `subscription_id`, not both
+
+### `opcua_list_subscriptions`
+List all active subscriptions. Reflects persisted intent accurately even
+immediately after a server restart, before re-subscription completes.
+
+**Parameters:** None
 
 **Parameters:**
 - `browse_name` (required): Browse name to search for
@@ -492,6 +580,16 @@ go test -cover ./...
 
 # Run tests with verbose output
 go test -v ./...
+```
+
+Integration tests (real Subscribe/reconnect/cache behavior against an
+actual Microsoft OPC-UA test server, via `testcontainers-go`) are excluded
+from the above - they need a local Docker daemon and are gated behind the
+`integration` build tag:
+
+```bash
+make test-integration
+# equivalent to: go test -tags=integration ./...
 ```
 
 ### Code Quality
@@ -672,6 +770,11 @@ Common volume mounts for Docker deployment:
 ```bash
 # Search index persistence
 -v ./search_index:/search_index
+
+# Persistent store (cached values/type-info/browse results, subscription
+# intent) - mount this so subscriptions and caches survive a container
+# restart, same treatment as search_index above
+-v ./mcp_opcua_store.db:/mcp_opcua_store.db
 
 # Certificate files (read-only)
 -v /path/to/certs:/certs:ro

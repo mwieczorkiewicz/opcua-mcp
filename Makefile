@@ -18,7 +18,7 @@ GOFMT=$(GOCMD) fmt
 # Build flags
 LDFLAGS=-ldflags "-X main.version=$(shell git describe --tags --always --dirty) -X main.buildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-.PHONY: all build clean test deps fmt lint docker-build docker-run compose-build compose-up-server compose-up compose-down connector-url help
+.PHONY: all build clean test test-integration deps fmt lint docker-build docker-run compose-build compose-up-server compose-up compose-down connector-url help
 
 # Default target
 all: clean deps fmt lint test build
@@ -55,6 +55,14 @@ test-coverage:
 	@echo "Running tests with coverage..."
 	$(GOTEST) -v -coverprofile=coverage.out ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
+
+# Run the integration test suite (requires a local Docker daemon - starts a
+# real Microsoft OPC-UA test server via testcontainers-go). Excluded from
+# `test`/`test-coverage` via the `integration` build tag so the default
+# suite stays Docker-free and fast (requirements.md NFR-4.2).
+test-integration:
+	@echo "Running integration tests (requires Docker)..."
+	$(GOTEST) -tags=integration -v ./...
 
 # Download dependencies
 deps:
@@ -232,6 +240,7 @@ help:
 	@echo "  clean            - Clean build artifacts"
 	@echo "  test             - Run tests"
 	@echo "  test-coverage    - Run tests with coverage"
+	@echo "  test-integration - Run integration tests against a real OPC-UA test server (requires Docker)"
 	@echo "  deps             - Download dependencies"
 	@echo "  fmt              - Format code"
 	@echo "  lint             - Run linter"
