@@ -303,3 +303,11 @@
 **Context**: Unit 2 NFR Design Steps 6-7, awaiting explicit approval before proceeding to Code Generation.
 
 ---
+
+## Unit 2 — NFR Design Approval + Code Generation Plan Presented
+**Timestamp**: 2026-08-02T03:20:00Z
+**User Input**: "continue"
+**AI Response**: NFR Design approved. Created `unit-2-subscription-management-code-generation-plan.md` (12 steps). Resolved a real technical wrinkle discovered while planning: gopcua routes incoming notifications by ClientHandle but requires MonitoredItemID for Unmonitor (two different IDs, both must be tracked); and gopcua's concrete *opcua.Subscription can't be mocked directly, so a new narrow subscriptionHandle interface (Monitor/Unmonitor/Cancel) is introduced that *opcua.Subscription satisfies implicitly, alongside a subscribingClient interface for Connect/SetStateChangeChannel/Subscribe. Presenting for approval before generation begins.
+**Context**: Unit 2 Code Generation Part 1, Step 7 gate.
+
+---
