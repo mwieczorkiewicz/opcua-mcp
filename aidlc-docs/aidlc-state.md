@@ -4,7 +4,7 @@
 - **Project**: opcua-mcp
 - **Project Type**: Brownfield
 - **Start Date**: 2026-08-02
-- **Current Stage**: CONSTRUCTION - Unit 2 (Subscription Management) - Code Generation complete, awaiting approval to proceed to Unit 3
+- **Current Stage**: CONSTRUCTION - Unit 3 (Read-Through Caching & MCP Integration) - Functional Design (autonomous mode, see Construction Progress below)
 
 ## Workspace State
 - **Existing Code**: Yes
@@ -69,12 +69,22 @@ per the approved plan at `/Users/mikolajwieczorkiewicz/.claude/plans/lucky-huggi
 - [x] NFR Requirements — nfr-requirements.md, tech-stack-decisions.md generated, approved by user 2026-08-02
 - [x] NFR Design — nfr-design-patterns.md, logical-components.md generated, approved by user 2026-08-02
 - [x] Infrastructure Design — SKIP (no infra-as-code in this project)
-- [x] Code Generation — reconnect_watcher.go, subscription.go (SubscriptionManager, seam interfaces, notification pump), client.go extended (Subscribe, state-change channel), mock_subscription_test.go, reconnect_watcher_test.go, subscription_test.go, subscription_pbt_test.go (stateful PBT). 93 tests passing in internal/opcua. Awaiting user approval.
+- [x] Code Generation — reconnect_watcher.go, subscription.go (SubscriptionManager, seam interfaces, notification pump), client.go extended (Subscribe, state-change channel), mock_subscription_test.go, reconnect_watcher_test.go, subscription_test.go, subscription_pbt_test.go (stateful PBT). 93 tests passing in internal/opcua. Approved by user 2026-08-02.
 
-**Unit 2 code generation complete, pending stage approval.**
+**Unit 2 COMPLETE.**
 
 ### Unit 3 — Read-Through Caching & MCP Integration
-- [ ] Not started (blocked on Unit 2 approval)
+**Mode**: Autonomous — user stepped away, explicitly authorized self-resolving all
+Functional/NFR Design questions using precedent from `requirements.md`/
+`components.md`/`component-methods.md`/`services.md` and Unit 1/2 conventions,
+without pausing for [Answer]-tag cycles or per-stage approval gates. Decisions
+are documented inline in each design doc instead. See audit.md entry
+"Unit 2 Approved — Autonomous Mode Enabled for Unit 3".
+- [x] Functional Design — domain-entities.md, business-rules.md (BR-1..BR-11), business-logic-model.md generated, self-approved (autonomous mode) 2026-08-02
+- [x] NFR Requirements — nfr-requirements.md, tech-stack-decisions.md generated, self-approved (autonomous mode) 2026-08-02
+- [x] NFR Design — nfr-design-patterns.md (resolves SECURITY-01/13), logical-components.md generated, self-approved (autonomous mode) 2026-08-02
+- [x] Infrastructure Design — SKIP (no infra-as-code in this project)
+- [ ] Code Generation — in progress
 
 ## Units (see unit-of-work.md for full detail)
 1. **Persistent Store** (`internal/store`) — no new dependencies, foundational

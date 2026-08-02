@@ -327,3 +327,27 @@
 **Context**: Unit 2 Code Generation Step 12 (documentation summary) and stage-completion gate, awaiting explicit approval before proceeding to Unit 3.
 
 ---
+
+## Unit 2 Approved — Autonomous Mode Enabled for Unit 3
+**Timestamp**: 2026-08-02T13:57:00Z
+**User Input**: "continue to next stage, i'll be going outstide to do some cycling. based on previous implementations and decisions you can safely assume what direction we go in (so don't stop on questions, unless there's a real blocker that you are unable to solve with common sense - you can answer on your own, and just note it in the aidlc docs)."
+**AI Response**: Unit 2 approved. Entering Unit 3 (Read-Through Caching & MCP Integration). Per explicit instruction, proceeding through Functional Design → NFR Requirements → NFR Design → Code Generation without pausing for [Answer]-tag question cycles or per-stage approval gates; every judgment call that would normally be a question is self-decided using precedent from `requirements.md`/`components.md`/`component-methods.md`/`services.md` and Unit 1/2 conventions, and documented inline in the relevant design doc rather than in a separate Q&A file. Will still stop and ask if a genuine blocker (missing credential, irreducible ambiguity with materially different implementations) comes up.
+**Context**: Unit 2 → Unit 3 transition; autonomous-mode operating rule for the remainder of this AIDLC run recorded here for future-session continuity.
+
+---
+
+## Unit 3 — Functional Design Generated (self-approved, autonomous mode)
+**Timestamp**: 2026-08-02T14:05:00Z
+**User Input**: (none — autonomous mode)
+**AI Response**: Generated `domain-entities.md`, `business-rules.md` (BR-1..BR-11), `business-logic-model.md` (Mermaid flowcharts) for Unit 3. Key self-decided points, each documented inline with rationale: (1) reused the existing `store.ValueEntry.Source` field as the subscribed/cached provenance signal, confirming `services.md`'s recommendation was already implemented by Units 1/2 with no change needed; (2) `CachingClient.Browse` returns `[]store.BrowseReference` rather than component-methods.md's literal `[]*ua.ReferenceDescription`, since cache hits can't produce a real gopcua struct and every caller flattens to the same 5 fields anyway; (3) `NodeTypeInfo` reconstruction from a cached `TypeInfoEntry` assumes namespace 0, matching this codebase's existing `IntID()`-only precedent elsewhere; (4) `opcua_unsubscribe`'s node_ids-vs-subscription_id ambiguity (FR-4.2) resolved as whole-matching-group removal, reaffirming Unit 2's BR-3; (5) BR-11 (store-open-failure degradation) flagged as a genuine judgment call with no prior-unit precedent — decided as degrade-to-EnableCache=false plus skip SubscriptionManager/ReconnectWatcher start, self-approved and proceeding rather than blocking.
+**Context**: Unit 3 Functional Design stage, self-approved per autonomous-mode instruction; proceeding directly to NFR Requirements.
+
+---
+
+## Unit 3 — NFR Requirements + NFR Design Generated (self-approved, autonomous mode)
+**Timestamp**: 2026-08-02T14:15:00Z
+**User Input**: (none — autonomous mode)
+**AI Response**: Generated `nfr-requirements.md`, `tech-stack-decisions.md`, `nfr-design-patterns.md`, `logical-components.md`. Key self-decided points: (1) confirmed `pgregory.net/rapid` (not `gopter`) as PBT-09's framework, consistency with Units 1/2 outweighing any feature difference; (2) confirmed `testcontainers-go` as a new test-only dependency (pre-approved in requirements.md Q7), reusing the `mcr.microsoft.com/iot/opc-ua-test-server:2.8` pin already present in `docker-compose.yml` (landed via a concurrent session's commits `c594301`/`24a0343` on the custom-connector dev stack — confirmed no conflict with this AIDLC run's work); (3) resolved both security questions requirements.md deferred to this stage: SECURITY-01 (no bbolt at-rest encryption - inconsistent to encrypt at rest data that arrives over an unencrypted-by-default OPC-UA connection) and SECURITY-13 (no additional integrity/audit layer beyond bbolt's own ACID guarantees); (4) the integration test's disconnect/reconnect scenario scope left conditional on real flakiness discovered during Code Generation, documented as a decision to record then rather than now. No blockers encountered.
+**Context**: Unit 3 NFR Requirements + NFR Design stages, self-approved per autonomous-mode instruction; proceeding directly to Code Generation planning.
+
+---
