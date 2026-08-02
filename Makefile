@@ -18,7 +18,7 @@ GOFMT=$(GOCMD) fmt
 # Build flags
 LDFLAGS=-ldflags "-X main.version=$(shell git describe --tags --always --dirty) -X main.buildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-.PHONY: all build clean test deps fmt lint docker-build docker-run help
+.PHONY: all build clean test deps fmt lint docker-build docker-run compose-build compose-up-server compose-up compose-down connector-url help
 
 # Default target
 all: clean deps fmt lint test build
@@ -183,26 +183,45 @@ dev-setup:
 		$(GOGET) github.com/securecodewarrior/gosec/v2/cmd/gosec@latest; \
 	fi
 
-# Start Microsoft OPC UA Test Server (Docker)
-start-opcua-server:
-	@echo "Starting Microsoft OPC UA Test Server..."
-	@docker run --rm -d --name opcua-test-server -p 4840:4840 mcr.microsoft.com/iot/opc-ua-test-server:2.8 --sample --port 4840
+# Build the docker-compose images (opcua-mcp built locally from the Dockerfile)
+compose-build:
+	@echo "Building docker-compose images..."
+	docker compose build
+
+# Start the Microsoft OPC UA test server standalone (detached), for manual dev use
+compose-up-server:
+	@echo "Starting Microsoft OPC UA test server via docker-compose..."
+	docker compose up -d opcua-server
 	@echo "OPC UA Test Server started on opc.tcp://localhost:4840"
-	@echo "Use 'make stop-opcua-server' to stop it"
+	@echo "Use 'make compose-down' to stop it"
 
-# Stop Microsoft OPC UA Test Server
-stop-opcua-server:
-	@echo "Stopping Microsoft OPC UA Test Server..."
-	@docker stop opcua-test-server || true
-	@echo "OPC UA Test Server stopped"
+# Start the full stack detached: OPC UA test server, opcua-mcp (HTTP mode), and the
+# cloudflared quick-tunnel that gives it a public HTTPS URL. Follow with 'make connector-url'.
+compose-up:
+	@echo "Starting full stack (opcua-server, opcua-mcp, cloudflared tunnel)..."
+	docker compose up -d
+	@echo "Stack started. Run 'make connector-url' once cloudflared has connected."
 
-# Run the application with the test server
-run-with-test-server: start-opcua-server
-	@echo "Waiting for OPC UA server to start..."
-	@sleep 5
-	@echo "Running application with test server..."
-	$(MAKE) run-with-server
-	@$(MAKE) stop-opcua-server
+# Stop and remove docker-compose services
+compose-down:
+	@echo "Stopping docker-compose services..."
+	docker compose down
+
+# Print the public HTTPS URL to paste into Claude's custom connector UI
+# (Settings > Connectors > Add custom connector). Requires 'make compose-up' first;
+# the tunnel URL is ephemeral and regenerates on every restart of the cloudflared service.
+connector-url:
+	@url=""; \
+	for i in $$(seq 1 30); do \
+		url=$$(docker compose logs cloudflared 2>/dev/null | grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' | tail -1); \
+		if [ -n "$$url" ]; then break; fi; \
+		sleep 1; \
+	done; \
+	if [ -z "$$url" ]; then \
+		echo "No tunnel URL found yet - is 'make compose-up' running? Check 'docker compose logs cloudflared'."; \
+		exit 1; \
+	fi; \
+	echo "Custom connector URL: $$url/mcp"
 
 # Show help
 help:
@@ -220,12 +239,14 @@ help:
 	@echo "  run-http         - Run in HTTP mode"
 	@echo "  run-with-server  - Run with custom OPC-UA server"
 	@echo "  run-with-auth    - Run with username authentication"
-	@echo "  start-opcua-server - Start Microsoft OPC UA test server (Docker)"
-	@echo "  stop-opcua-server  - Stop Microsoft OPC UA test server"
-	@echo "  run-with-test-server - Run app with test server (auto start/stop)"
 	@echo "  docker-build     - Build Docker image"
 	@echo "  docker-run       - Run Docker container"
 	@echo "  docker-run-with-volume - Run Docker container with volume"
+	@echo "  compose-build    - Build docker-compose images (opcua-mcp built locally)"
+	@echo "  compose-up-server - Start Microsoft OPC UA test server via docker-compose (detached)"
+	@echo "  compose-up       - Start full stack: test server, opcua-mcp (HTTP), cloudflared tunnel"
+	@echo "  compose-down     - Stop and remove docker-compose services"
+	@echo "  connector-url    - Print the public HTTPS URL for Claude's custom connector UI"
 	@echo "  install          - Install binary to GOPATH/bin"
 	@echo "  generate-mocks   - Generate mocks"
 	@echo "  benchmark        - Run benchmarks"
