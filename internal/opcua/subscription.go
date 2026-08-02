@@ -19,23 +19,23 @@ import (
 type subscribingClient interface {
 	Connect(ctx context.Context) error
 	SetStateChangeChannel(ch chan<- opcua.ConnState)
-	Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (subscriptionHandle, error)
+	Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (SubscriptionHandle, error)
 }
 
 var _ subscribingClient = (*Client)(nil)
 
-// subscriptionHandle is the subset of *opcua.Subscription's surface this
+// SubscriptionHandle is the subset of *opcua.Subscription's surface this
 // package needs. gopcua's concrete *opcua.Subscription satisfies it
 // implicitly (its real method signatures match exactly) - this interface
 // exists purely so tests can inject a mock, since the concrete type has
 // unexported fields and can't be faked directly.
-type subscriptionHandle interface {
+type SubscriptionHandle interface {
 	Monitor(ctx context.Context, ts ua.TimestampsToReturn, items ...*ua.MonitoredItemCreateRequest) (*ua.CreateMonitoredItemsResponse, error)
 	Unmonitor(ctx context.Context, monitoredItemIDs ...uint32) (*ua.DeleteMonitoredItemsResponse, error)
 	Cancel(ctx context.Context) error
 }
 
-var _ subscriptionHandle = (*opcua.Subscription)(nil)
+var _ SubscriptionHandle = (*opcua.Subscription)(nil)
 
 // subscriptionStore is the narrow slice of store.Store's surface
 // SubscriptionManager needs.
@@ -73,7 +73,7 @@ type subscriptionRecord struct {
 // subscription requesting IntervalMs (BR-2).
 type intervalGroup struct {
 	IntervalMs              int
-	Sub                     subscriptionHandle
+	Sub                     SubscriptionHandle
 	RefCount                int
 	ClientHandleToNodeID    map[uint32]string // routes incoming notifications (keyed by the client-assigned handle)
 	NodeIDToClientHandle    map[string]uint32 // reverse, for removing routing entries on Unsubscribe

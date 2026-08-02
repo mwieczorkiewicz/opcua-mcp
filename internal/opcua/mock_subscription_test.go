@@ -10,7 +10,7 @@ import (
 // mockSubscribingClient implements subscribingClient for tests.
 type mockSubscribingClient struct {
 	connectFunc   func(ctx context.Context) error
-	subscribeFunc func(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (subscriptionHandle, error)
+	subscribeFunc func(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (SubscriptionHandle, error)
 
 	connectCalls   int
 	subscribeCalls int
@@ -29,7 +29,7 @@ func (m *mockSubscribingClient) SetStateChangeChannel(ch chan<- opcua.ConnState)
 	m.stateCh = ch
 }
 
-func (m *mockSubscribingClient) Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (subscriptionHandle, error) {
+func (m *mockSubscribingClient) Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (SubscriptionHandle, error) {
 	m.subscribeCalls++
 	if m.subscribeFunc != nil {
 		return m.subscribeFunc(ctx, params, notifyCh)
@@ -37,7 +37,7 @@ func (m *mockSubscribingClient) Subscribe(ctx context.Context, params *opcua.Sub
 	return &mockSubscriptionHandle{}, nil
 }
 
-// mockSubscriptionHandle implements subscriptionHandle for tests.
+// mockSubscriptionHandle implements SubscriptionHandle for tests.
 type mockSubscriptionHandle struct {
 	monitorFunc   func(ctx context.Context, ts ua.TimestampsToReturn, items ...*ua.MonitoredItemCreateRequest) (*ua.CreateMonitoredItemsResponse, error)
 	unmonitorFunc func(ctx context.Context, monitoredItemIDs ...uint32) (*ua.DeleteMonitoredItemsResponse, error)

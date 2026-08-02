@@ -164,10 +164,10 @@ func (c *Client) SetStateChangeChannel(ch chan<- opcua.ConnState) {
 }
 
 // Subscribe creates a new OPC-UA subscription and returns it as the narrow
-// subscriptionHandle interface (defined in subscription.go) rather than the
+// SubscriptionHandle interface (defined in subscription.go) rather than the
 // concrete *opcua.Subscription, so SubscriptionManager's tests can inject a
 // mock in its place.
-func (c *Client) Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (subscriptionHandle, error) {
+func (c *Client) Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (SubscriptionHandle, error) {
 	client, connected := c.snapshot()
 	if !connected || client == nil {
 		return nil, fmt.Errorf("client is not connected")

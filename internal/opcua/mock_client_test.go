@@ -64,7 +64,7 @@ func (m *mockOpcuaClient) BrowseNext(ctx context.Context, req *ua.BrowseNextRequ
 // client.go), but no test drives subscriptions through this seam: gopcua's
 // concrete *opcua.Subscription can't be faked here (unexported fields), so
 // SubscriptionManager's own tests mock the separate, purpose-built
-// subscribingClient/subscriptionHandle interfaces in subscription.go instead.
+// subscribingClient/SubscriptionHandle interfaces in subscription.go instead.
 func (m *mockOpcuaClient) Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (*opcua.Subscription, error) {
 	m.subscribeCalls++
 	if m.subscribeFunc != nil {

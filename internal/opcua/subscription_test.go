@@ -74,7 +74,7 @@ func TestSubscribeSuccess(t *testing.T) {
 
 func TestSubscribePartialFailure(t *testing.T) {
 	client := &mockSubscribingClient{
-		subscribeFunc: func(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (subscriptionHandle, error) {
+		subscribeFunc: func(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (SubscriptionHandle, error) {
 			return &mockSubscriptionHandle{
 				monitorFunc: func(ctx context.Context, ts ua.TimestampsToReturn, items ...*ua.MonitoredItemCreateRequest) (*ua.CreateMonitoredItemsResponse, error) {
 					results := make([]*ua.MonitoredItemCreateResult, len(items))
@@ -121,7 +121,7 @@ func TestSubscribePartialFailure(t *testing.T) {
 
 func TestSubscribeAllRejected(t *testing.T) {
 	client := &mockSubscribingClient{
-		subscribeFunc: func(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (subscriptionHandle, error) {
+		subscribeFunc: func(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (SubscriptionHandle, error) {
 			return &mockSubscriptionHandle{
 				monitorFunc: func(ctx context.Context, ts ua.TimestampsToReturn, items ...*ua.MonitoredItemCreateRequest) (*ua.CreateMonitoredItemsResponse, error) {
 					results := make([]*ua.MonitoredItemCreateResult, len(items))
@@ -189,7 +189,7 @@ func TestUnsubscribeDecrementsRefCountAndCancelsAtZero(t *testing.T) {
 		},
 	}
 	client := &mockSubscribingClient{
-		subscribeFunc: func(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (subscriptionHandle, error) {
+		subscribeFunc: func(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (SubscriptionHandle, error) {
 			return handle, nil
 		},
 	}
