@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/blevesearch/bleve/v2 v2.5.3
 	github.com/caarlos0/env/v11 v11.4.1
-	github.com/gopcua/opcua v0.8.0
+	github.com/gopcua/opcua v0.9.0
 	github.com/mark3labs/mcp-go v0.39.1
 )
 
