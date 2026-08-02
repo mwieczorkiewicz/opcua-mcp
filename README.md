@@ -2,6 +2,8 @@
 
 A Model Context Protocol (MCP) server that enables integration between OPC-UA servers and Large Language Models (LLMs). This server provides a bridge between OPC-UA industrial automation systems and AI applications, allowing LLMs to interact with industrial data and control systems.
 
+https://github.com/user-attachments/assets/0b676e6e-17ce-42f5-918f-9a615e939008
+
 ## Changelog
 
 **New in this release**: push-based subscriptions and a persistent
