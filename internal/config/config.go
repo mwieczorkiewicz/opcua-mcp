@@ -96,10 +96,12 @@ type SearchConfig struct {
 	SearchMaxResults int     `env:"SEARCH_MAX_RESULTS" envDefault:"100"`
 	SearchMinScore   float64 `env:"SEARCH_MIN_SCORE" envDefault:"0.1"`
 
-	// Cache settings
-	EnableCache  bool          `env:"ENABLE_CACHE" envDefault:"true"`
-	CacheTTL     time.Duration `env:"CACHE_TTL" envDefault:"5m"`
-	MaxCacheSize int           `env:"MAX_CACHE_SIZE" envDefault:"10000"`
+	// Cache settings. EnableCache is the master on/off switch for
+	// internal/opcua.CachingClient's read-through caching (false ->
+	// always live, matching pre-Unit-3 behavior exactly). TTLs live on
+	// StoreConfig (TypeInfoTTL/BrowseTTL) since they're properties of the
+	// persistent store, not of search/discovery.
+	EnableCache bool `env:"ENABLE_CACHE" envDefault:"true"`
 }
 
 // StoreConfig holds persistent store (bbolt) configuration
