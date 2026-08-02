@@ -4,7 +4,7 @@
 - **Project**: opcua-mcp
 - **Project Type**: Brownfield
 - **Start Date**: 2026-08-02
-- **Current Stage**: CONSTRUCTION - Unit 3 (Read-Through Caching & MCP Integration) - Functional Design (autonomous mode, see Construction Progress below)
+- **Current Stage**: CONSTRUCTION complete (all 3 units + Build and Test). Next phase per CLAUDE.md: OPERATIONS (currently a placeholder, no work defined yet).
 
 ## Workspace State
 - **Existing Code**: Yes
@@ -52,7 +52,7 @@ per the approved plan at `/Users/mikolajwieczorkiewicz/.claude/plans/lucky-huggi
 - [x] Workflow Planning — execution-plan.md generated, awaiting user approval
 - [x] Application Design — 5 artifacts generated, awaiting user approval
 - [x] Units Generation — 3 units defined, approved by user 2026-08-02
-- [ ] Build and Test — EXECUTE (planned, after all 3 units)
+- [x] Build and Test — build-instructions.md, unit-test-instructions.md, integration-test-instructions.md, build-and-test-summary.md generated. All green: go build/vet/gofmt clean, go test -race ./... (194 tests, 0 failures), make test-integration (2/2 pass against real Docker). Self-approved (autonomous mode) 2026-08-02.
 
 ## Construction Progress
 ### Unit 1 — Persistent Store
@@ -84,7 +84,9 @@ are documented inline in each design doc instead. See audit.md entry
 - [x] NFR Requirements — nfr-requirements.md, tech-stack-decisions.md generated, self-approved (autonomous mode) 2026-08-02
 - [x] NFR Design — nfr-design-patterns.md (resolves SECURITY-01/13), logical-components.md generated, self-approved (autonomous mode) 2026-08-02
 - [x] Infrastructure Design — SKIP (no infra-as-code in this project)
-- [ ] Code Generation — in progress
+- [x] Code Generation — CachingClient (caching_client.go + unit/PBT tests), mcp.Server integration (3 new tools, opcua_read/write/browse_nodes wired to CachingClient, shutdown ordering), cmd/opcua-mcp.go wiring (store-open degradation per BR-11), testcontainers-go integration suite (both tests run and pass against a real Docker container), Makefile test-integration target, README updates. Self-approved (autonomous mode) 2026-08-02.
+
+**Unit 3 COMPLETE. All 3 units done.**
 
 ## Units (see unit-of-work.md for full detail)
 1. **Persistent Store** (`internal/store`) — no new dependencies, foundational

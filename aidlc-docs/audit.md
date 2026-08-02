@@ -351,3 +351,19 @@
 **Context**: Unit 3 NFR Requirements + NFR Design stages, self-approved per autonomous-mode instruction; proceeding directly to Code Generation planning.
 
 ---
+
+## Unit 3 — Code Generation Complete (self-approved, autonomous mode)
+**Timestamp**: 2026-08-02T16:35:00Z
+**User Input**: "remember to keep on committing in logical chunks" (mid-turn reminder)
+**AI Response**: Executed all 14 code-generation-plan.md steps across 3 commits: (1) `feat: add CachingClient read-through cache decorator (Unit 3, part 1)` - config cleanup + CachingClient + unit/PBT tests; (2) `feat: wire CachingClient and SubscriptionManager into MCP server (Unit 3, part 2)` - 3 new tools, opcua_read/write/browse_nodes integration, cmd/opcua-mcp.go wiring with BR-11 graceful degradation, shutdown ordering; (3) `test: add testcontainers-go integration suite for subscriptions/caching (Unit 3, part 3)` - real-server integration tests (both run and pass against local Docker), Makefile test-integration target, README updates. One self-inflicted git mistake was caught and fixed mid-session: an unrelated concurrent session's staged Makefile/docker-compose.yml/README.md changes (a Claude custom-connector dev-stack effort, unrelated to this AIDLC run) were briefly swept into a docs commit by an unqualified `git commit` call; caught immediately via `git show --stat`, fixed with `git reset --soft HEAD~1` + a re-commit with an explicit pathspec, no work lost. Also discovered mid-session that the same concurrent session had independently committed `c594301`/`24a0343` on top of this branch with no conflicts. Documentation summary created at `aidlc-docs/construction/unit-3-read-through-caching-mcp-integration/code/summary.md`, documenting 4 self-decided mechanism deviations (Server's store-Close()-only field, NewServer's parameter list, cmd/opcua-mcp.go's construction ordering, and descoping the disconnect/reconnect integration scenario as genuinely too flaky to automate reliably - the last one explicitly flagged as conditional back in NFR Requirements). All 14 steps marked [x]. Full verification green throughout: `go build/vet/gofmt/test -race ./...` and `go build/vet -tags=integration ./...`.
+**Context**: Unit 3 Code Generation complete - all 3 Phase 2 units now done. Proceeding to Build and Test per the AIDLC workflow's mandatory next phase.
+
+---
+
+## Build and Test Complete (self-approved, autonomous mode)
+**Timestamp**: 2026-08-02T16:40:00Z
+**User Input**: (none — autonomous mode)
+**AI Response**: Generated `build-instructions.md`, `unit-test-instructions.md`, `integration-test-instructions.md` (performance-test-instructions.md and contract-test-instructions.md omitted as N/A - no throughput/latency targets exist for this project, and it's a single Go module with no cross-service contracts, per the adaptive workflow principle of only executing stages/artifacts that add value), and `build-and-test-summary.md`. Final verification: `go build ./...`, `go build -tags=integration ./...`, `go vet ./...`, `go vet -tags=integration ./...`, `gofmt -l .` all clean; `go test -race ./...` - 194 tests, 0 failures across 5 packages; `make test-integration` (`go test -tags=integration ./internal/opcua/...`) - 2/2 integration tests pass against a real local Docker daemon. No regressions in any pre-existing Phase 0/1 test.
+**Context**: Build and Test stage complete - CONSTRUCTION phase now fully done for Phase 2 (Units 1, 2, 3 + Build and Test). Next AIDLC phase is OPERATIONS, currently a placeholder per CLAUDE.md with no defined workflow.
+
+---
