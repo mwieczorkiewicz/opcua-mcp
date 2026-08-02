@@ -255,3 +255,27 @@
 **Context**: Unit 2 Functional Design Steps 6-7, awaiting explicit approval before proceeding to NFR Requirements.
 
 ---
+
+## Unit 2 — Functional Design Approval
+**Timestamp**: 2026-08-02T02:50:00Z
+**User Input**: "continue"
+**AI Response**: Functional design approved as-is. Proceeding to NFR Requirements.
+**Context**: Unit 2 Functional Design stage complete.
+
+---
+
+## Unit 2 — NFR Requirements Plan Presented
+**Timestamp**: 2026-08-02T02:55:00Z
+**User Input**: (n/a — AI-initiated)
+**AI Response**: Created `aidlc-docs/construction/plans/unit-2-subscription-management-nfr-requirements-plan.md` with 3 questions: reconnect rebuild retry strategy (avoid stacking two independent retry policies), stateful PBT scope (resolving requirements.md NFR-3.3 - a simplified model + command sequences + RefCount invariant checks), and whether a specific pump throughput target is needed. Scalability/security/tech-stack carried over from Unit 1 without new questions. Presenting for answers.
+**Context**: Unit 2 NFR Requirements Step 4/5 gate.
+
+---
+
+## Unit 2 — NFR Requirements Artifacts Generated
+**Timestamp**: 2026-08-02T03:00:00Z
+**User Input**: "answered, continue, commit changes too" (Q1=A no outer retry loop beyond Client's own, Q2=A stateful PBT with RefCount invariant checks, Q3=A no specific throughput target)
+**AI Response**: Generated nfr-requirements.md and tech-stack-decisions.md (google/uuid v1.6.0, existing indirect promoted to direct use, BSD-3-Clause license). Presenting for approval; will commit pending docs per the user's explicit request.
+**Context**: Unit 2 NFR Requirements Steps 6-7, awaiting explicit approval before proceeding to NFR Design.
+
+---
