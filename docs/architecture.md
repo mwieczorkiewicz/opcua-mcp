@@ -2,21 +2,31 @@
 
 ## Overview
 
-```
-LLM client (Claude, etc.)
-        │  MCP (stdio or streamable HTTP)
-        ▼
-internal/mcp.Server            registers 18 tools + 2 resources, dispatches to:
-        │
-        ├── internal/opcua.CachingClient   read-through cache decorator
-        │         │
-        │         ├── internal/opcua.Client        thin OPC-UA protocol wrapper (gopcua)
-        │         └── internal/store.Store          bbolt-backed cache/subscription persistence
-        │
-        ├── internal/opcua.SubscriptionManager       push subscriptions, notification batching
-        │         └── internal/opcua.ReconnectWatcher  detects dead connections, triggers rebuild
-        │
-        └── internal/opcua.DiscoveryService          background address-space crawl + Bleve index
+```mermaid
+flowchart TD
+    Client(["LLM client (Claude, etc.)"])
+    MCPServer["internal/mcp.Server<br/>18 tools + 2 resources"]
+    CachingClient["internal/opcua.CachingClient<br/>read-through cache decorator"]
+    OpcClient["internal/opcua.Client<br/>OPC-UA protocol wrapper (gopcua)"]
+    StoreDB[("internal/store.Store<br/>bbolt: values / typeinfo / browse / subscriptions")]
+    SubMgr["internal/opcua.SubscriptionManager<br/>push subscriptions, notification batching"]
+    Watcher["internal/opcua.ReconnectWatcher"]
+    Discovery["internal/opcua.DiscoveryService<br/>background crawl + Bleve index"]
+    OPCUAServer[("OPC-UA server")]
+
+    Client -->|"MCP: stdio or streamable HTTP"| MCPServer
+    MCPServer --> CachingClient
+    MCPServer --> SubMgr
+    MCPServer --> Discovery
+
+    CachingClient --> OpcClient
+    CachingClient --> StoreDB
+    SubMgr --> StoreDB
+    SubMgr --> Watcher
+    Watcher -.->|"detects dead connection, triggers rebuild"| SubMgr
+
+    OpcClient --> OPCUAServer
+    Discovery --> OPCUAServer
 ```
 
 ```
