@@ -175,3 +175,27 @@
 **Context**: Unit 1 NFR Requirements Steps 6-7, awaiting explicit approval before proceeding to NFR Design.
 
 ---
+
+## Unit 1 — NFR Requirements Approval
+**Timestamp**: 2026-08-02T01:55:00Z
+**User Input**: "continue"
+**AI Response**: NFR requirements approved as-is. Proceeding to NFR Design.
+**Context**: Unit 1 NFR Requirements stage complete.
+
+---
+
+## Unit 1 — NFR Design Plan Presented
+**Timestamp**: 2026-08-02T02:00:00Z
+**User Input**: (n/a — AI-initiated per NFR Design Steps 2-4)
+**AI Response**: Created `aidlc-docs/construction/plans/unit-1-persistent-store-nfr-design-plan.md`. Explicitly marked Scalability/Performance/Security/Logical-Components patterns as already resolved by nfr-requirements.md (with rationale, not silently skipped) and asked the one genuinely open question: whether Store should retry bbolt operations on failure (recommended: no, local I/O failures are durable, not transient). Presenting for answer.
+**Context**: Unit 1 NFR Design Step 4/5 gate.
+
+---
+
+## Unit 1 — NFR Design Artifacts Generated
+**Timestamp**: 2026-08-02T02:05:00Z
+**User Input**: "continue" (Q1=A no retry logic)
+**AI Response**: Generated nfr-design-patterns.md (fail-fast resilience, 0600 file permissions, no scalability/performance patterns needed beyond bbolt defaults, real-bbolt-in-tempdir testability) and logical-components.md (confirms no queue/cache/circuit-breaker/rate-limiter/retry components belong in this unit). Presenting for approval before proceeding to Code Generation (Infrastructure Design skipped per the execution plan - no infra-as-code in this project).
+**Context**: Unit 1 NFR Design Steps 6-7, awaiting explicit approval before proceeding to Code Generation.
+
+---
