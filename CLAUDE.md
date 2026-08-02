@@ -542,7 +542,7 @@ The Operations stage will eventually include:
 
 ## Project Context: opcua-mcp
 
-Everything below reflects this repo's *current, verified* state as of the last audit (`docs/plan/findings.md`) — not aspirations. Where a planned fix hasn't landed yet, it's phrased as "will be introduced by `<plan-item-id>`," not described as already true.
+Everything below reflects this repo's *current, verified* state after a completed hardening pass over critical correctness (data races, stdio log corruption, wire-type decoding, input validation) and performance/robustness (partial-batch reads, browse pagination, discovery cache correctness, graceful shutdown) issues — not aspirations. The ad-hoc audit docs that drove that pass (`docs/plan/findings.md`/`plan.md`/`decisions.md`) have been retired now that their items have landed; `docs/COMMIT_CONVENTION.md` (this repo's commit message convention) is the one doc from that effort still in `docs/`. Further work is planned and tracked through the AIDLC workflow described at the top of this file — see "Where to look for current work" below.
 
 ### What this is
 
@@ -551,11 +551,11 @@ Everything below reflects this repo's *current, verified* state as of the last a
 ### Architecture
 
 - `cmd/opcua-mcp.go` — entrypoint. Loads config, initializes the logger, constructs `internal/opcua.Client`, connects eagerly unless `SERVER_TRANSPORT=stdio` (stdio connects lazily via the `opcua_connect` tool), constructs `internal/mcp.Server`, starts it.
-- `internal/mcp/server.go` — `Server` type. Registers all MCP tools in `SetupTools()`, holds the `*opcua.Client` and `*opcua.DiscoveryService`, runs the stdio or HTTP transport loop, handles graceful shutdown (`setupGracefulShutdown`).
-- `internal/opcua/client.go` — `Client` type. Thin wrapper over `gopcua/opcua`: `Connect`/`Disconnect`/`IsConnected`, `Read`/`Write`/`Browse`, per-attribute node reads (`GetNodeClass`, `GetNodeDataType`, etc.), `GetNodeTypeInfo`/`ValidateValueForNode` for write-time type checking. **Currently has no internal synchronization** on its `client`/`connected` fields — do not assume it's safe to call from multiple goroutines until plan item `P0-1` lands.
-- `internal/opcua/discovery.go` — `DiscoveryService` type. Walks the OPC-UA address space from `SEARCH_DISCOVERY_ROOT_NODE` on a ticker (`SEARCH_DISCOVERY_INTERVAL`), maintains an in-memory `nodeCache` (protected by `cacheMutex sync.RWMutex` — this locking pattern is correct today and is the model to follow for new code) and a persistent on-disk Bleve full-text index for fuzzy node-name search.
+- `internal/mcp/server.go` — `Server` type. Registers all 15 MCP tools in `SetupTools()` (none removed or gated behind a flag yet), holds the `*opcua.Client` and `*opcua.DiscoveryService`, runs the stdio or HTTP transport loop, handles graceful shutdown (`setupGracefulShutdown`) — which now also drains the running `*server.StreamableHTTPServer` (stored on `Server`, guarded by `httpServerMu`) before exiting in http mode.
+- `internal/opcua/client.go` — `Client` type. Thin wrapper over `gopcua/opcua`. The `client` field is typed as the package-internal `opcuaClient` interface (`Connect`/`Close`/`Read`/`Write`/`Browse`/`BrowseNext`), not the concrete `*opcua.Client`, specifically so tests can inject a mock — reuse `internal/opcua/mock_client_test.go`'s `mockOpcuaClient` for new tests rather than adding a second seam. `client`/`connected` are guarded by `mu sync.RWMutex`; every method reads them via the `snapshot()` helper rather than touching the fields directly (`grep -n "c\.client\b\|c\.connected\b" internal/opcua/client.go` should only show hits inside `snapshot()`/`Connect()`/`Disconnect()`/`SetConnectedForTesting()`). `Read` returns a result per requested node even when some have a bad status — only a transport-level failure produces a top-level error. `Browse` follows `BrowseNext` continuation points (bounded by both `ctx` and a hard iteration cap). `Write` fetches `GetNodeTypeInfo` once and passes it into `ValidateValueForNode` (no redundant second fetch), and returns an error - not just a logged warning - when validation fails.
+- `internal/opcua/discovery.go` — `DiscoveryService` type. Walks the OPC-UA address space from `SEARCH_DISCOVERY_ROOT_NODE` on a ticker (`SEARCH_DISCOVERY_INTERVAL`), maintains an in-memory `nodeCache` (protected by `cacheMutex sync.RWMutex`) and a persistent on-disk Bleve full-text index. Discovery is generation-tagged mark-and-sweep: `discoveryMu` serializes the ticker worker against an explicit `opcua_force_discovery` call (only one walk runs at a time); `walkGen`/`NodeInfo.SeenInGen` tag every node touched in the current walk; a sweep pass after the walk deletes anything not touched from both `nodeCache` and the Bleve index in the same batch. The cache is upserted in place rather than wiped-then-rebuilt, and a walk-scoped `visited` set stops a subtree shared by multiple parents (address spaces are graphs, not trees) from being re-browsed once per incoming reference. **Known gap, not yet fixed**: `GetNodeByBrowseName` and the tiered Bleve search methods (`searchExact`/`searchWildcard`/`searchFuzzy`, `SearchNodes`, `SearchByDepth`, `SearchByNodeClass`) returned zero hits for some queries that should match, in testing — `browse_name` is mapped with both a text and a keyword analyzer on the same field path in `NewDiscoveryService`, which is the confirmed root cause for that field; a couple of other query paths (numeric depth range, node_class exact term) also came back empty without a confirmed root cause yet. Don't rely on these search tiers for new behavior until this is investigated.
 - `internal/config/` — env-var config via `caarlos0/env/v11`, four structs (`ServerConfig`/`SERVER_*`, `OPCUAConfig`/`OPCUA_*`, `MCPConfig`/`MCP_*`, `SearchConfig`/`SEARCH_*`), loaded once in `cmd/opcua-mcp.go`.
-- `internal/logger/` — `slog`-based structured logging, output destination (`stdout`/`stderr`/`file`) selected by `SERVER_LOG_OUTPUT`.
+- `internal/logger/` — `slog`-based structured logging. `SERVER_TRANSPORT=stdio` forces the output writer to stderr regardless of `SERVER_LOG_OUTPUT` (`resolveLogOutput`), with a one-time warning if the user explicitly set `SERVER_LOG_OUTPUT=stdout`, since stdout carries the MCP JSON-RPC stream in stdio mode.
 
 ### Build, test, run
 
@@ -563,7 +563,7 @@ Everything below reflects this repo's *current, verified* state as of the last a
 go build ./...
 go vet ./...
 go test ./...
-go test -race ./...          # no test currently exercises Client from two goroutines — see P0-1
+go test -race ./...          # exercises Client's connection state and discovery's cache from multiple goroutines
 gofmt -l .                   # should output nothing
 ```
 
@@ -576,27 +576,25 @@ Run locally, HTTP mode (connects to the OPC-UA server eagerly at startup):
 SERVER_TRANSPORT=http SERVER_HTTP_PORT=8080 OPCUA_ENDPOINT=opc.tcp://localhost:4840 go run ./cmd/opcua-mcp
 ```
 
-`golangci-lint`/`staticcheck` are not reliably available in every dev environment (see `docs/plan/decisions.md` item D8) — don't assume their absence means the code is clean; `go vet`/`gofmt`/tests are the reliable local baseline.
+`golangci-lint`/`staticcheck` are not reliably available in every dev environment — don't assume their absence means the code is clean; `go vet`/`gofmt`/tests are the reliable local baseline.
 
 ### Hard rules
 
-- **Never write to stdout in stdio mode.** MCP JSON-RPC uses stdout as the wire protocol; today (`SERVER_LOG_OUTPUT` default `stdout`) logs collide with it by default — this is a known critical bug (`docs/plan/findings.md` H1), fixed by plan item `P0-2` (forces stderr in stdio mode). Until `P0-2` lands, any code touching logger setup or stdio transport must be extra careful not to write to `os.Stdout` directly. After `P0-2` lands, logging is stderr-in-stdio-mode by construction — don't reintroduce a stdout path.
-- **No new direct dependencies without explicit sign-off.** The one pre-approved exception is promoting `go.etcd.io/bbolt` (already an indirect dependency via Bleve) to direct, for the persistent-cache work in `docs/plan/plan.md` Phase 2.
-- **Preserve env var and tool-name backward compatibility**, except the specific breaking removals already recorded in `docs/plan/decisions.md` (D1: removal of `opcua_get_value`/`opcua_browse`, gating of `opcua_debug_search`/`opcua_ensure_server_nodes`). Don't introduce other silent renames.
-- **Guard `Client.client`/`Client.connected` with `Client.mu`** once `P0-1` lands — every method must snapshot state via the `snapshot()` helper rather than reading the fields directly. Before `P0-1` lands, don't add new concurrent access paths to `Client` without also adding the mutex.
-- **Don't call `store`/Bleve methods while holding `DiscoveryService.cacheMutex` or `SubscriptionManager.mu`** (once those exist, Phase 2) — snapshot needed data under the lock, release, then do I/O.
+- **Never write to stdout in stdio mode.** Enforced today: `internal/logger.resolveLogOutput` forces stderr whenever `SERVER_TRANSPORT=stdio`, regardless of `SERVER_LOG_OUTPUT`. Don't reintroduce a stdout path in logger setup or stdio transport code.
+- **No new direct dependencies without explicit sign-off.** Promoting `go.etcd.io/bbolt` (already an indirect dependency via Bleve) to direct is pre-approved for upcoming persistent-cache/subscription work.
+- **Preserve env var and tool-name backward compatibility.** All 15 currently-registered tools are still present and ungated; any removal or gating (e.g. behind a feature flag) needs explicit sign-off and a README changelog callout, same bar as the `opcua_write`/stdio-logging behavior changes already called out there.
+- **Guard `Client.client`/`Client.connected` with `Client.mu`.** Every method must snapshot state via the `snapshot()` helper rather than reading the fields directly; don't add a new concurrent access path to `Client` without going through it.
+- **Don't call `store`/Bleve methods while holding `DiscoveryService.cacheMutex`** (and, once a `SubscriptionManager` exists, its own lock) — snapshot needed data under the lock, release, then do I/O. `discoveryMu` is held for a whole walk but never across a Bleve I/O call outside `updateSearchIndex`'s existing batch pattern — keep it that way.
 
 ### Conventions
 
 - Error wrapping: `fmt.Errorf("...: %w", err)`.
 - All logging goes through `internal/logger` (a thin `slog` wrapper) — never `fmt.Print*`/`log.Print*` directly.
-- Tests are table-driven (see `internal/config/config_test.go`, `internal/opcua/client_test.go` for the existing style).
-- New MCP tools are registered in `internal/mcp/server.go`'s `SetupTools()`, each with a `mcp.NewTool(...)` definition and a `handleX` method; keep tool descriptions distinct enough to avoid reintroducing the overlap documented as H11.
+- Tests are table-driven (see `internal/config/config_test.go` for the style). Mock the gopcua client via the `opcuaClient` interface seam (`internal/opcua/mock_client_test.go`) rather than a live/simulated server; `internal/opcua/discovery_test.go`'s `treeBrowser` builds on the same seam for discovery-specific tests.
+- New MCP tools are registered in `internal/mcp/server.go`'s `SetupTools()`, each with a `mcp.NewTool(...)` definition and a `handleX` method; keep tool descriptions distinct — `opcua_read`/`opcua_get_value` and `opcua_browse`/`opcua_browse_nodes` already overlap functionally (one is a strict subset of the other), a known gap not yet cleaned up.
 
 ### Where to look for current work
 
-- `docs/plan/findings.md` — verified audit findings (H1-H11 plus additional issues), each with file:line evidence and severity. Treat this as ground truth for *why* a given plan item exists.
-- `docs/plan/plan.md` — the phased, ID-based implementation plan (`P0-1` … `P3-7`). Each item has acceptance criteria and a concrete verification step. This is the unit of work — pick items off it one at a time, in dependency order.
-- `docs/plan/decisions.md` — open questions needing human sign-off (dependency upgrades, `OPCUA_SERVER_CERT` fate, Docker UID choice, etc.) before the plan items gated on them can proceed.
+Planning happens through the AIDLC workflow at the top of this file, not ad-hoc plan docs. Check `aidlc-docs/` for the current requirements/design/plan state once a workflow session has produced one; `git log` is the source of truth for what's already landed (each commit follows `docs/COMMIT_CONVENTION.md` and names the plan item or finding it addresses where applicable).
 
 If you're picking up a plan item, re-verify its cited file:line references before trusting them — the code may have moved since the audit.
