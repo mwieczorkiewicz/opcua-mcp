@@ -565,6 +565,7 @@ go vet ./...
 go test ./...
 go test -race ./...          # exercises Client's connection state and discovery's cache from multiple goroutines
 gofmt -l .                   # should output nothing
+golint ./...                 # should output nothing; CI runs this too (.github/workflows/go-ci.yml)
 ```
 
 Run locally, stdio mode (default transport, no OPC-UA connection until `opcua_connect` is called):
@@ -576,10 +577,11 @@ Run locally, HTTP mode (connects to the OPC-UA server eagerly at startup):
 SERVER_TRANSPORT=http SERVER_HTTP_PORT=8080 OPCUA_ENDPOINT=opc.tcp://localhost:4840 go run ./cmd/opcua-mcp
 ```
 
-`golangci-lint`/`staticcheck` are not reliably available in every dev environment — don't assume their absence means the code is clean; `go vet`/`gofmt`/tests are the reliable local baseline.
+`golangci-lint`/`staticcheck` are not reliably available in every dev environment — don't assume their absence means the code is clean; `go vet`/`gofmt`/`golint`/tests are the reliable local baseline.
 
 ### Hard rules
 
+- **All code shall be linted.** Run `golint ./...` locally before considering work done and fix findings rather than leaving them for CI to catch — CI's `go-ci.yml` workflow runs `golint ./...` and fails the build on any output. If a finding conflicts with an intentional design pattern (e.g. an unexported interface used as a test seam), resolve the conflict explicitly (rename/export, or a narrowly-scoped CI exclusion) rather than silently ignoring it — classic `golint` has no `//nolint` suppression.
 - **Never write to stdout in stdio mode.** Enforced today: `internal/logger.resolveLogOutput` forces stderr whenever `SERVER_TRANSPORT=stdio`, regardless of `SERVER_LOG_OUTPUT`. Don't reintroduce a stdout path in logger setup or stdio transport code.
 - **No new direct dependencies without explicit sign-off.** Promoting `go.etcd.io/bbolt` (already an indirect dependency via Bleve) to direct is pre-approved for upcoming persistent-cache/subscription work.
 - **Preserve env var and tool-name backward compatibility.** All 15 currently-registered tools are still present and ungated; any removal or gating (e.g. behind a feature flag) needs explicit sign-off and a README changelog callout, same bar as the `opcua_write`/stdio-logging behavior changes already called out there.
