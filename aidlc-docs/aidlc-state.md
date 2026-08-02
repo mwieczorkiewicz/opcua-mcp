@@ -4,7 +4,7 @@
 - **Project**: opcua-mcp
 - **Project Type**: Brownfield
 - **Start Date**: 2026-08-02
-- **Current Stage**: CONSTRUCTION - Unit 1 (Persistent Store) - Functional Design (in progress)
+- **Current Stage**: CONSTRUCTION - Unit 1 (Persistent Store) - NFR Requirements (in progress)
 
 ## Workspace State
 - **Existing Code**: Yes
@@ -56,8 +56,8 @@ per the approved plan at `/Users/mikolajwieczorkiewicz/.claude/plans/lucky-huggi
 
 ## Construction Progress
 ### Unit 1 — Persistent Store
-- [x] Functional Design — domain-entities.md, business-rules.md, business-logic-model.md generated, awaiting user approval
-- [ ] NFR Requirements
+- [x] Functional Design — domain-entities.md, business-rules.md, business-logic-model.md generated, approved by user 2026-08-02
+- [x] NFR Requirements — nfr-requirements.md, tech-stack-decisions.md generated, awaiting user approval
 - [ ] NFR Design
 - [ ] Infrastructure Design — SKIP (no infra-as-code in this project)
 - [ ] Code Generation

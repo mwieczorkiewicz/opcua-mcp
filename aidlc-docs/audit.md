@@ -151,3 +151,27 @@
 **Context**: Unit 1 Functional Design Steps 6-7, awaiting explicit approval before proceeding to NFR Requirements.
 
 ---
+
+## Unit 1 — Functional Design Approval
+**Timestamp**: 2026-08-02T01:40:00Z
+**User Input**: "apptove, continue" [sic — approve]
+**AI Response**: Functional design approved as-is. Proceeding to NFR Requirements.
+**Context**: Unit 1 Functional Design stage complete.
+
+---
+
+## Unit 1 — NFR Requirements Plan Presented
+**Timestamp**: 2026-08-02T01:45:00Z
+**User Input**: (n/a — AI-initiated per NFR Requirements Steps 2-4)
+**AI Response**: Created `aidlc-docs/construction/plans/unit-1-persistent-store-nfr-requirements-plan.md` with 4 questions: PBT framework selection (rapid vs gopter, required per PBT-09), bbolt file encryption at rest (SECURITY-01), expected scale, and whether Store's methods should take context.Context despite bbolt's own API not needing it. Most project-level NFRs already settled in requirements.md's extension-compliance tables (experimental/lab tool). Presenting for answers.
+**Context**: Unit 1 NFR Requirements Step 4/5 gate.
+
+---
+
+## Unit 1 — NFR Requirements Artifacts Generated
+**Timestamp**: 2026-08-02T01:50:00Z
+**User Input**: "answered, continue" (Q1=A rapid PBT framework, Q2=A no encryption at rest, Q3=B medium scale/thousands, Q4=B add ctx context.Context to Store's methods for consistency)
+**AI Response**: Generated nfr-requirements.md (scalability/performance/availability/security/reliability/maintainability/usability, all resolved with no ambiguity) and tech-stack-decisions.md (bbolt v1.5.0 - confirmed current via `go list -m -versions`, pgregory.net/rapid v1.3.0 with rationale vs gopter). Noted Q4's ctx addition as a refinement to the already-approved component-methods.md rather than reopening that stage. Presenting for approval.
+**Context**: Unit 1 NFR Requirements Steps 6-7, awaiting explicit approval before proceeding to NFR Design.
+
+---
