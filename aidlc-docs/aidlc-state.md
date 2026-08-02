@@ -65,7 +65,7 @@ per the approved plan at `/Users/mikolajwieczorkiewicz/.claude/plans/lucky-huggi
 **Unit 1 COMPLETE.**
 
 ### Unit 2 — Subscription Management
-- [ ] Functional Design — in progress
+- [x] Functional Design — domain-entities.md, business-rules.md, business-logic-model.md generated, awaiting user approval
 - [ ] NFR Requirements
 - [ ] NFR Design
 - [ ] Infrastructure Design — SKIP (no infra-as-code in this project)

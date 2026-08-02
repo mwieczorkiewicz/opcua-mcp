@@ -239,3 +239,19 @@
 **Context**: Unit 1 fully complete (Functional Design, NFR Requirements, NFR Design, Code Generation all approved). Beginning Unit 2.
 
 ---
+
+## Unit 2 — Functional Design Plan Presented
+**Timestamp**: 2026-08-02T02:40:00Z
+**User Input**: (n/a — AI-initiated)
+**AI Response**: Created `aidlc-docs/construction/plans/unit-2-subscription-management-functional-design-plan.md` with 6 questions covering the genuinely complex open decisions for this unit: subscription ID generation (uuid vs counter), the interval-to-gopcua-Subscription mapping strategy (the most consequential architectural choice - share one gopcua Subscription per distinct interval, or one per logical Subscribe() call), Unsubscribe semantics (whole-group vs partial), partial-failure handling within one Subscribe() call (mirroring P1-1's Read fix), ReconnectWatcher's callback execution model (sync vs async, flagged as open in component-dependency.md), and pump goroutine failure handling. Presenting for answers.
+**Context**: Unit 2 Functional Design Step 4/5 gate.
+
+---
+
+## Unit 2 — Functional Design Artifacts Generated
+**Timestamp**: 2026-08-02T02:45:00Z
+**User Input**: "done, continue" (all 6 answers = A: uuid IDs, one gopcua Subscription per distinct interval with refcounting, whole-group Unsubscribe, partial-success Subscribe mirroring P1-1, synchronous reconnect callback, log-and-continue pump failure handling)
+**AI Response**: Generated domain-entities.md (subscriptionRecord, intervalGroup, SubscriptionInfo, SubscriptionManager/ReconnectWatcher struct shapes, a new Client.SetStateChangeChannel method), business-rules.md (BR-1 through BR-8, covering the interval-sharing/refcounting scheme, partial-failure handling, and the warm-start-before-Start-returns guarantee that makes ListSubscriptions safe to read from memory), and business-logic-model.md (flowcharts for Subscribe, Unsubscribe, the notification pump, and ReconnectWatcher's watch loop). Presenting for approval.
+**Context**: Unit 2 Functional Design Steps 6-7, awaiting explicit approval before proceeding to NFR Requirements.
+
+---
