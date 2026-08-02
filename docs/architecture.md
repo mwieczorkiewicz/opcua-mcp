@@ -32,7 +32,7 @@ flowchart TD
 ```
 cmd/opcua-mcp.go        entrypoint: load config, build client/services, start server
 internal/
-├── config/             env-var config structs (caarlos0/env)
+├── config/             config structs (spf13/viper): defaults < config file < env vars
 ├── logger/              slog wrapper; forces stderr in stdio mode
 ├── opcua/
 │   ├── client.go        OPC-UA protocol wrapper (Read/Write/Browse/GetNodeTypeInfo/...)

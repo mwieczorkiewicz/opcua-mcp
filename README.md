@@ -88,7 +88,23 @@ subscription manager, and discovery index fit together.
 
 ## Configuration
 
-Everything is configured via environment variables.
+Configuration is loaded (via [viper](https://github.com/spf13/viper)) from
+three sources, in ascending order of precedence:
+
+1. Built-in defaults (shown in the tables below).
+2. An optional config file — TOML, YAML, JSON, or any other format viper
+   supports. By default `./config.{yaml,yml,toml,json,...}` is read if
+   present; point at an explicit path with `CONFIG_FILE=/path/to/config.toml`.
+   A config file is entirely optional — env vars alone are still enough.
+3. Environment variables (`SERVER_*`, `OPCUA_*`, `MCP_*`, `SEARCH_*`, `STORE_*`) — **always win** over the config file, so existing env-var-only deployments keep working unchanged.
+
+A config file mirrors the env var names, lowercased and nested under each
+prefix, e.g. `SERVER_HTTP_PORT` becomes:
+
+```yaml
+server:
+  http_port: "8080"
+```
 
 ### Server
 
