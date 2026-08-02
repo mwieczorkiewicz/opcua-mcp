@@ -22,6 +22,14 @@ type NodeInfo struct {
 	ParentNode     string    `json:"parent_node"`
 	Depth          int       `json:"depth"`
 	LastUpdated    time.Time `json:"last_updated"`
+
+	// SeenInGen is the discovery walk generation this node was last observed
+	// in; entries whose SeenInGen falls behind the current generation after
+	// a walk completes no longer exist on the live server and are swept
+	// (findings.md H6/H7/H8). Internal bookkeeping only - not part of the
+	// tool-facing JSON shape or the Bleve document (both key off the json
+	// tag), so a stale walk generation never leaks past this package.
+	SeenInGen uint64 `json:"-"`
 }
 
 // DiscoveryService handles node discovery and search functionality
@@ -33,6 +41,14 @@ type DiscoveryService struct {
 	cacheMutex sync.RWMutex
 	stopChan   chan struct{}
 	wg         sync.WaitGroup
+
+	// discoveryMu serializes discoverNodes so the ticker-driven worker and an
+	// explicit opcua_force_discovery call never walk concurrently - both
+	// would otherwise race on walkGen and the mark-and-sweep bookkeeping.
+	discoveryMu sync.Mutex
+	// walkGen is the current discovery generation, incremented once per walk
+	// under discoveryMu.
+	walkGen uint64
 }
 
 // NewDiscoveryService creates a new discovery service
@@ -139,39 +155,61 @@ func (ds *DiscoveryService) discoveryWorker(ctx context.Context) {
 	}
 }
 
-// discoverNodes performs a full node discovery starting from the root node
+// discoverNodes performs a full node discovery starting from the root node.
+// It serializes against any other concurrent discoverNodes call (the
+// ticker-driven worker vs. an explicit opcua_force_discovery) so only one
+// walk - and one walkGen - is ever in flight at a time.
 func (ds *DiscoveryService) discoverNodes(ctx context.Context) error {
 	if !ds.client.IsConnected() {
 		return fmt.Errorf("OPC-UA client is not connected")
 	}
 
-	logger.Info("Starting node discovery", "root_node", ds.config.DiscoveryRootNode, "max_depth", ds.config.MaxDiscoveryDepth, "max_nodes_per_browse", ds.config.MaxNodesPerBrowse)
+	ds.discoveryMu.Lock()
+	defer ds.discoveryMu.Unlock()
 
-	// Clear existing cache
-	ds.cacheMutex.Lock()
-	ds.nodeCache = make(map[string]*NodeInfo)
-	ds.cacheMutex.Unlock()
+	ds.walkGen++
+	currentGen := ds.walkGen
 
-	// Discover nodes recursively
-	discovered, err := ds.discoverNodeRecursive(ctx, ds.config.DiscoveryRootNode, "", 0)
+	logger.Info("Starting node discovery", "root_node", ds.config.DiscoveryRootNode, "max_depth", ds.config.MaxDiscoveryDepth, "max_nodes_per_browse", ds.config.MaxNodesPerBrowse, "generation", currentGen)
+
+	// Walk the address space, upserting each node in place (under
+	// cacheMutex.Lock() per node) instead of wiping nodeCache first. A
+	// concurrent reader (GetNodeInfo, SearchNodes, ...) therefore never
+	// observes an empty-then-partially-rebuilt cache mid-walk (findings.md
+	// H7). visited tracks nodes whose own children have already been
+	// browsed in this generation, so a node reachable via more than one
+	// hierarchical reference - OPC-UA address spaces are graphs, not trees -
+	// isn't re-browsed for each incoming reference (findings.md H6).
+	visited := make(map[string]bool)
+	discovered, err := ds.discoverNodeRecursive(ctx, ds.config.DiscoveryRootNode, "", 0, currentGen, visited)
 	if err != nil {
 		return fmt.Errorf("failed to discover nodes: %w", err)
 	}
 
-	// Get final cache size
-	ds.cacheMutex.RLock()
+	// Sweep: anything not touched in this generation no longer exists on the
+	// live server (or is unreachable from the root within MaxDiscoveryDepth)
+	// and must be removed from both the in-memory cache and the Bleve index
+	// (findings.md H8 - the index previously never deleted anything).
+	ds.cacheMutex.Lock()
+	var swept []string
+	for id, info := range ds.nodeCache {
+		if info.SeenInGen != currentGen {
+			swept = append(swept, id)
+			delete(ds.nodeCache, id)
+		}
+	}
 	cacheSize := len(ds.nodeCache)
-	ds.cacheMutex.RUnlock()
+	ds.cacheMutex.Unlock()
 
-	logger.Info("Node discovery completed", "discovered_nodes", discovered, "cache_size", cacheSize)
+	logger.Info("Node discovery completed", "discovered_nodes", discovered, "cache_size", cacheSize, "swept_nodes", len(swept), "generation", currentGen)
 
 	// Update search index if enabled
 	if ds.config.EnableSearch && ds.index != nil {
-		if err := ds.updateSearchIndex(); err != nil {
+		if err := ds.updateSearchIndex(swept); err != nil {
 			logger.Error("Failed to update search index", "error", err)
 			return fmt.Errorf("failed to update search index: %w", err)
 		}
-		logger.Info("Search index updated successfully", "indexed_nodes", cacheSize)
+		logger.Info("Search index updated successfully", "indexed_nodes", cacheSize, "deleted_nodes", len(swept))
 	} else {
 		logger.Warn("Search indexing is disabled or index is nil")
 	}
@@ -179,12 +217,22 @@ func (ds *DiscoveryService) discoverNodes(ctx context.Context) error {
 	return nil
 }
 
-// discoverNodeRecursive recursively discovers nodes starting from a given node
-func (ds *DiscoveryService) discoverNodeRecursive(ctx context.Context, nodeID, parentNode string, depth int) (int, error) {
+// discoverNodeRecursive recursively discovers nodes starting from a given
+// node. visited is scoped to a single discoverNodes call (discoveryMu keeps
+// only one walk running at a time, so no extra locking is needed for it) and
+// prevents re-browsing a node whose children were already walked earlier in
+// this same generation.
+func (ds *DiscoveryService) discoverNodeRecursive(ctx context.Context, nodeID, parentNode string, depth int, currentGen uint64, visited map[string]bool) (int, error) {
 	if depth > ds.config.MaxDiscoveryDepth {
 		logger.Debug("Max discovery depth reached", "node_id", nodeID, "depth", depth, "max_depth", ds.config.MaxDiscoveryDepth)
 		return 0, nil
 	}
+
+	if visited[nodeID] {
+		logger.Debug("Node already walked this generation, skipping re-browse", "node_id", nodeID, "depth", depth)
+		return 0, nil
+	}
+	visited[nodeID] = true
 
 	// Browse the current node
 	references, err := ds.client.Browse(ctx, nodeID)
@@ -212,8 +260,9 @@ func (ds *DiscoveryService) discoverNodeRecursive(ctx context.Context, nodeID, p
 	logger.Debug("Browsing node", "node_id", nodeID, "depth", depth, "references_count", len(references))
 
 	discovered := 0
+	directChildren := 0 // direct children processed at this level only (findings.md H10e)
 	for i, ref := range references {
-		if discovered >= ds.config.MaxNodesPerBrowse {
+		if directChildren >= ds.config.MaxNodesPerBrowse {
 			logger.Warn("Max nodes per browse limit reached", "node_id", nodeID, "limit", ds.config.MaxNodesPerBrowse, "processed", i)
 			break
 		}
@@ -228,18 +277,22 @@ func (ds *DiscoveryService) discoverNodeRecursive(ctx context.Context, nodeID, p
 			ParentNode:     parentNode,
 			Depth:          depth,
 			LastUpdated:    time.Now(),
+			SeenInGen:      currentGen,
 		}
 
-		// Add to cache
+		// Upsert into cache (a node reachable via multiple parents keeps
+		// whichever parent/depth it was most recently discovered under in
+		// this walk - unchanged from prior behavior).
 		ds.cacheMutex.Lock()
 		ds.nodeCache[nodeInfo.NodeID] = nodeInfo
 		ds.cacheMutex.Unlock()
 
+		directChildren++
 		discovered++
 		logger.Debug("Discovered node", "node_id", nodeInfo.NodeID, "browse_name", nodeInfo.BrowseName, "depth", depth)
 
 		// Recursively discover child nodes
-		childDiscovered, err := ds.discoverNodeRecursive(ctx, nodeInfo.NodeID, nodeInfo.NodeID, depth+1)
+		childDiscovered, err := ds.discoverNodeRecursive(ctx, nodeInfo.NodeID, nodeInfo.NodeID, depth+1, currentGen, visited)
 		if err != nil {
 			logger.Warn("Failed to discover child nodes", "node_id", nodeInfo.NodeID, "browse_name", nodeInfo.BrowseName, "error", err)
 		} else {
@@ -252,8 +305,10 @@ func (ds *DiscoveryService) discoverNodeRecursive(ctx context.Context, nodeID, p
 	return discovered, nil
 }
 
-// updateSearchIndex updates the Bleve search index with current node cache
-func (ds *DiscoveryService) updateSearchIndex() error {
+// updateSearchIndex updates the Bleve search index with the current node
+// cache and deletes any swept (no-longer-present) node IDs from the same
+// batch (findings.md H8).
+func (ds *DiscoveryService) updateSearchIndex(swept []string) error {
 	if ds.index == nil {
 		return fmt.Errorf("search index is nil")
 	}
@@ -276,14 +331,18 @@ func (ds *DiscoveryService) updateSearchIndex() error {
 	}
 	ds.cacheMutex.RUnlock()
 
-	logger.Info("Preparing to update search index", "total_nodes", nodeCount, "batch_size", indexedCount, "failed_batch_adds", failedCount)
+	for _, id := range swept {
+		batch.Delete(id)
+	}
+
+	logger.Info("Preparing to update search index", "total_nodes", nodeCount, "batch_size", indexedCount, "failed_batch_adds", failedCount, "deleted_nodes", len(swept))
 
 	// Execute batch
 	if err := ds.index.Batch(batch); err != nil {
 		return fmt.Errorf("failed to execute search index batch: %w", err)
 	}
 
-	logger.Info("Updated search index successfully", "total_nodes", nodeCount, "indexed_nodes", indexedCount, "failed_nodes", failedCount)
+	logger.Info("Updated search index successfully", "total_nodes", nodeCount, "indexed_nodes", indexedCount, "failed_nodes", failedCount, "deleted_nodes", len(swept))
 	return nil
 }
 
