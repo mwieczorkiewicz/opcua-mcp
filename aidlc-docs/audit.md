@@ -199,3 +199,19 @@
 **Context**: Unit 1 NFR Design Steps 6-7, awaiting explicit approval before proceeding to Code Generation.
 
 ---
+
+## Unit 1 — NFR Design Approval
+**Timestamp**: 2026-08-02T02:10:00Z
+**User Input**: "approve, go on"
+**AI Response**: NFR design approved as-is. Proceeding to Code Generation - Unit 1's design work (Functional Design, NFR Requirements, NFR Design) is now complete.
+**Context**: Unit 1 NFR Design stage complete.
+
+---
+
+## Unit 1 — Code Generation Plan Presented
+**Timestamp**: 2026-08-02T02:15:00Z
+**User Input**: (n/a — AI-initiated per Code Generation Part 1)
+**AI Response**: Created `aidlc-docs/construction/plans/unit-1-persistent-store-code-generation-plan.md` with 10 numbered steps: dependency updates (bbolt v1.5.0, rapid v1.3.0), StoreConfig addition to internal/config/config.go, types.go, value_encoding.go (encode/decode), store.go (Open/Close + all 4 buckets' CRUD), store_test.go (table-driven, real bbolt in tempdir), value_encoding_test.go (rapid-driven round-trip PBT + fail-fast example test), and a markdown summary doc. Every step traced to a requirements.md FR. Presenting for approval before generation begins.
+**Context**: Code Generation Part 1, Step 7 gate.
+
+---
