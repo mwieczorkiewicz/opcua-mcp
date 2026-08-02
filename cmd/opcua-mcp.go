@@ -7,6 +7,7 @@ import (
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/logger"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/mcp"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/opcua"
+	"github.com/mwieczorkiewicz/opcua-mcp/internal/store"
 )
 
 func main() {
@@ -36,14 +37,26 @@ func main() {
 		"endpoint", cfg.OPCUA.Endpoint,
 	)
 
+	// Open the persistent store before creating the OPC-UA client (BR-10) -
+	// store-open failures should surface before any network I/O is
+	// attempted. A failure here is non-fatal (NFR-1.2/BR-11): the server
+	// still serves every live (non-cached, non-subscribed) tool, with
+	// caching forced off and subscriptions unavailable for this process
+	// lifetime, since there's no sensible in-memory-only fallback for
+	// persisted subscription intent.
+	searchCfg := cfg.Search
+	st, err := store.Open(cfg.Store.DBPath, cfg.Store.OpenTimeout)
+	if err != nil {
+		log.Warn("Failed to open persistent store; continuing with caching and subscriptions disabled",
+			"error", err,
+			"db_path", cfg.Store.DBPath,
+		)
+		st = nil
+		searchCfg.EnableCache = false
+	}
+
 	// Create OPC-UA client
 	opcuaClient := opcua.NewClient(&cfg.OPCUA)
-
-	// Create MCP server
-	mcpServer, err := mcp.NewServer(cfg, opcuaClient)
-	if err != nil {
-		log.Fatal("Failed to create MCP server", "error", err)
-	}
 
 	// Connect to OPC-UA server if not in stdio mode
 	if cfg.Server.Transport != "stdio" {
@@ -59,6 +72,29 @@ func main() {
 				"endpoint", cfg.OPCUA.Endpoint,
 			)
 		}
+	}
+
+	cachingClient := opcua.NewCachingClient(opcuaClient, st, &searchCfg, cfg.Store.TypeInfoTTL, cfg.Store.BrowseTTL)
+
+	// Construct and warm-start the subscription manager only when the store
+	// opened successfully. Start() re-establishes persisted subscriptions
+	// (FR-2.5) before returning; a failure here is also non-fatal - the
+	// server falls back to subscriptions-unavailable rather than refusing
+	// to start (NFR-1.2).
+	var subscriptionManager *opcua.SubscriptionManager
+	if st != nil {
+		mgr := opcua.NewSubscriptionManager(opcuaClient, st, &cfg.Store)
+		if err := mgr.Start(context.Background()); err != nil {
+			log.Warn("Failed to start subscription manager; continuing with subscriptions unavailable", "error", err)
+		} else {
+			subscriptionManager = mgr
+		}
+	}
+
+	// Create MCP server
+	mcpServer, err := mcp.NewServer(cfg, opcuaClient, cachingClient, subscriptionManager, st)
+	if err != nil {
+		log.Fatal("Failed to create MCP server", "error", err)
 	}
 
 	// Start MCP server

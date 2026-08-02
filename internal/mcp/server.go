@@ -17,14 +17,18 @@ import (
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/config"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/logger"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/opcua"
+	"github.com/mwieczorkiewicz/opcua-mcp/internal/store"
 )
 
 // Server wraps the MCP server with OPC-UA functionality
 type Server struct {
-	mcpServer   *server.MCPServer
-	opcuaClient *opcua.Client
-	discovery   *opcua.DiscoveryService
-	config      *config.Config
+	mcpServer           *server.MCPServer
+	opcuaClient         *opcua.Client
+	cachingClient       *opcua.CachingClient
+	subscriptionManager *opcua.SubscriptionManager // nil if the persistent store failed to open at startup (Unit 3 BR-11) - handlers must nil-check
+	discovery           *opcua.DiscoveryService
+	config              *config.Config
+	store               *store.Store // nil if store.Open failed (BR-11); Close()'d strictly last during shutdown (BR-10)
 
 	// httpServerMu guards httpServer, which is set by startHTTP() and read by
 	// setupGracefulShutdown()'s signal-handling goroutine; it stays nil in
@@ -33,8 +37,16 @@ type Server struct {
 	httpServer   *server.StreamableHTTPServer
 }
 
-// NewServer creates a new MCP server with OPC-UA capabilities
-func NewServer(cfg *config.Config, opcuaClient *opcua.Client) (*Server, error) {
+// NewServer creates a new MCP server with OPC-UA capabilities. cachingClient
+// and subscriptionManager are constructed by the caller (cmd/opcua-mcp.go,
+// per services.md's startup orchestration) since both depend on the
+// persistent store, which NewServer itself has no reason to open. st is the
+// same store handle, held only for Close() during graceful shutdown (BR-10)
+// - Server has no other store-CRUD surface. subscriptionManager and st are
+// both nil when the store failed to open at startup (BR-11); cachingClient
+// is never nil (the caller constructs it with EnableCache forced false in
+// that case instead).
+func NewServer(cfg *config.Config, opcuaClient *opcua.Client, cachingClient *opcua.CachingClient, subscriptionManager *opcua.SubscriptionManager, st *store.Store) (*Server, error) {
 	// Create MCP server with capabilities
 	s := server.NewMCPServer(
 		cfg.MCP.Name,
@@ -53,10 +65,13 @@ func NewServer(cfg *config.Config, opcuaClient *opcua.Client) (*Server, error) {
 	}
 
 	return &Server{
-		mcpServer:   s,
-		opcuaClient: opcuaClient,
-		discovery:   discovery,
-		config:      cfg,
+		mcpServer:           s,
+		opcuaClient:         opcuaClient,
+		cachingClient:       cachingClient,
+		subscriptionManager: subscriptionManager,
+		discovery:           discovery,
+		config:              cfg,
+		store:               st,
 	}, nil
 }
 
@@ -64,10 +79,14 @@ func NewServer(cfg *config.Config, opcuaClient *opcua.Client) (*Server, error) {
 func (s *Server) SetupTools() error {
 	// Read tool
 	readTool := mcp.NewTool("opcua_read",
-		mcp.WithDescription("Read values from OPC-UA nodes"),
+		mcp.WithDescription("Read values from OPC-UA nodes now. Subscribed nodes (see opcua_subscribe) are always served from the live push-based cache; others go live unless max_age_ms allows a cached value."),
 		mcp.WithString("node_ids",
 			mcp.Required(),
 			mcp.Description("Node IDs to read. Supports multiple formats: single node (i=85), comma-separated (i=85,i=86), or JSON array ([\"i=85\",\"i=86\"])"),
+		),
+		mcp.WithNumber("max_age_ms",
+			mcp.Description("Maximum acceptable age (milliseconds) of a cached value before falling back to a live read. 0 (default) means always live for non-subscribed nodes; subscribed nodes are always served fresh regardless of this value."),
+			mcp.DefaultNumber(0),
 		),
 	)
 	s.mcpServer.AddTool(readTool, s.handleRead)
@@ -203,6 +222,38 @@ func (s *Server) SetupTools() error {
 		mcp.WithDescription("Ensure critical Server nodes are properly indexed"),
 	)
 	s.mcpServer.AddTool(ensureServerNodesTool, s.handleEnsureServerNodes)
+
+	// Subscribe tool
+	subscribeTool := mcp.NewTool("opcua_subscribe",
+		mcp.WithDescription("Subscribe to push-based live updates for one or more OPC-UA nodes. Subscriptions persist across server restarts and are automatically re-established on startup."),
+		mcp.WithString("node_ids",
+			mcp.Required(),
+			mcp.Description("Node IDs to subscribe to. Supports the same formats as opcua_read: single node, comma-separated, or JSON array"),
+		),
+		mcp.WithNumber("interval_ms",
+			mcp.Required(),
+			mcp.Description("Publishing interval in milliseconds"),
+		),
+	)
+	s.mcpServer.AddTool(subscribeTool, s.handleSubscribe)
+
+	// Unsubscribe tool
+	unsubscribeTool := mcp.NewTool("opcua_unsubscribe",
+		mcp.WithDescription("Cancel an active subscription, either by its subscription_id or by naming one or more of its subscribed node_ids (removes the entire subscription group those nodes belong to - subscriptions cannot be partially cancelled)."),
+		mcp.WithString("subscription_id",
+			mcp.Description("Subscription ID to cancel"),
+		),
+		mcp.WithString("node_ids",
+			mcp.Description("Node IDs whose subscription group(s) should be cancelled - provide this or subscription_id, not both"),
+		),
+	)
+	s.mcpServer.AddTool(unsubscribeTool, s.handleUnsubscribe)
+
+	// List subscriptions tool
+	listSubscriptionsTool := mcp.NewTool("opcua_list_subscriptions",
+		mcp.WithDescription("List all active push-based subscriptions, reflecting persisted intent even immediately after a server restart, before re-subscription completes."),
+	)
+	s.mcpServer.AddTool(listSubscriptionsTool, s.handleListSubscriptions)
 
 	return nil
 }
@@ -344,7 +395,9 @@ func (s *Server) handleServerResource(ctx context.Context, req mcp.ReadResourceR
 	}, nil
 }
 
-// handleRead handles the opcua_read tool
+// handleRead handles the opcua_read tool. Since Unit 3, this delegates to
+// CachingClient rather than opcuaClient directly, gaining read-through
+// caching/subscription-awareness (requirements.md FR-3.1-3.3).
 func (s *Server) handleRead(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	nodeIDsStr := req.GetString("node_ids", "")
 	if nodeIDsStr == "" {
@@ -357,26 +410,31 @@ func (s *Server) handleRead(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to parse node IDs: %v", err)), nil
 	}
 
-	// Read values from OPC-UA server
-	results, err := s.opcuaClient.Read(ctx, nodeIDs)
+	maxAgeMs := int(req.GetFloat("max_age_ms", 0))
+
+	// Read values via the caching layer. Since P1-1, this still returns one
+	// result per requested node even when some have a bad per-node status (no
+	// top-level error for that case) - each node's own "status" field below
+	// already surfaces that.
+	results, err := s.cachingClient.Read(ctx, nodeIDs, maxAgeMs)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to read from OPC-UA server: %v", err)), nil
 	}
 
-	// Format results. Since P1-1, Client.Read returns one result per
-	// requested node even when some have a bad per-node status (no top-level
-	// error for that case) - each node's own "status" field below already
-	// surfaces that, and result.Value is never nil (gopcua's DataValue.Decode
-	// always allocates it), so no nil-guard is needed for result.Value.Value().
 	var response []map[string]interface{}
-	for i, result := range results {
-		response = append(response, map[string]interface{}{
-			"node_id":          nodeIDs[i],
-			"value":            result.Value.Value(),
+	for _, result := range results {
+		entry := map[string]interface{}{
+			"node_id":          result.NodeID,
+			"value":            result.Value,
 			"status":           result.Status,
 			"source_timestamp": result.SourceTimestamp,
 			"server_timestamp": result.ServerTimestamp,
-		})
+			"source":           result.Source,
+		}
+		if !result.CachedAt.IsZero() {
+			entry["cached_at"] = result.CachedAt
+		}
+		response = append(response, entry)
 	}
 
 	responseJSON, err := json.MarshalIndent(response, "", "  ")
@@ -405,14 +463,18 @@ func (s *Server) handleWrite(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		return mcp.NewToolResultError(fmt.Sprintf("Invalid JSON value: %v", err)), nil
 	}
 
-	// Get node type information for better error reporting
-	typeInfo, err := s.opcuaClient.GetNodeTypeInfo(ctx, nodeID)
+	// Get node type information for better error reporting. Delegates to
+	// CachingClient since Unit 3 (requirements.md FR-3.5/BR-6) - a node
+	// written to repeatedly benefits from typeinfo caching automatically.
+	typeInfo, err := s.cachingClient.GetNodeTypeInfo(ctx, nodeID)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to get node type information: %v", err)), nil
 	}
 
-	// Write value to OPC-UA server (includes type validation)
-	if err := s.opcuaClient.Write(ctx, nodeID, value); err != nil {
+	// Write value to OPC-UA server (includes type validation). Delegates to
+	// CachingClient since Unit 3 - invalidates any non-subscribed cached
+	// value for this node on success (requirements.md FR-3.6).
+	if err := s.cachingClient.Write(ctx, nodeID, value); err != nil {
 		// Provide detailed error information including type details
 		errorMsg := fmt.Sprintf("Failed to write to OPC-UA server: %v", err)
 
@@ -906,14 +968,140 @@ func (s *Server) handleEnsureServerNodes(ctx context.Context, req mcp.CallToolRe
 	return mcp.NewToolResultText(string(responseJSON)), nil
 }
 
-// browseNodesWithDepth recursively browses nodes with depth limit
+// subscriptionsUnavailableResult is returned by all 3 subscription tool
+// handlers when subscriptionManager is nil - the persistent store failed to
+// open at startup (requirements.md NFR-1.2, business-rules.md BR-11) and
+// there is no sensible in-memory-only fallback for subscription intent.
+func subscriptionsUnavailableResult() *mcp.CallToolResult {
+	return mcp.NewToolResultError("Subscriptions are unavailable: the persistent store failed to open at startup")
+}
+
+// handleSubscribe handles the opcua_subscribe tool
+func (s *Server) handleSubscribe(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if s.subscriptionManager == nil {
+		return subscriptionsUnavailableResult(), nil
+	}
+
+	nodeIDsStr := req.GetString("node_ids", "")
+	if nodeIDsStr == "" {
+		return mcp.NewToolResultError("node_ids parameter is required"), nil
+	}
+	nodeIDs, err := opcua.ParseNodeIDs(nodeIDsStr)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to parse node IDs: %v", err)), nil
+	}
+
+	intervalMs := int(req.GetFloat("interval_ms", 0))
+	if intervalMs <= 0 {
+		return mcp.NewToolResultError("interval_ms parameter is required and must be positive"), nil
+	}
+
+	subscriptionID, rejected, err := s.subscriptionManager.Subscribe(ctx, nodeIDs, intervalMs)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to subscribe: %v", err)), nil
+	}
+
+	rejectedSet := make(map[string]bool, len(rejected))
+	for _, r := range rejected {
+		rejectedSet[r.NodeID] = true
+	}
+	accepted := make([]string, 0, len(nodeIDs))
+	for _, nodeID := range nodeIDs {
+		if !rejectedSet[nodeID] {
+			accepted = append(accepted, nodeID)
+		}
+	}
+
+	return s.marshalResponse(map[string]interface{}{
+		"subscription_id": subscriptionID,
+		"accepted":        accepted,
+		"rejected":        rejected,
+		"interval_ms":     intervalMs,
+	})
+}
+
+// handleUnsubscribe handles the opcua_unsubscribe tool. Accepts either
+// subscription_id (removes that group directly) or node_ids (removes every
+// subscription group any of those nodes belongs to, in whole -
+// business-rules.md BR-8).
+func (s *Server) handleUnsubscribe(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if s.subscriptionManager == nil {
+		return subscriptionsUnavailableResult(), nil
+	}
+
+	subscriptionID := req.GetString("subscription_id", "")
+	nodeIDsStr := req.GetString("node_ids", "")
+	if subscriptionID == "" && nodeIDsStr == "" {
+		return mcp.NewToolResultError("either subscription_id or node_ids is required"), nil
+	}
+
+	var toRemove []string
+	if subscriptionID != "" {
+		toRemove = []string{subscriptionID}
+	} else {
+		nodeIDs, err := opcua.ParseNodeIDs(nodeIDsStr)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to parse node IDs: %v", err)), nil
+		}
+		requested := make(map[string]bool, len(nodeIDs))
+		for _, nodeID := range nodeIDs {
+			requested[nodeID] = true
+		}
+		for _, info := range s.subscriptionManager.ListSubscriptions() {
+			for _, nodeID := range info.NodeIDs {
+				if requested[nodeID] {
+					toRemove = append(toRemove, info.ID)
+					break
+				}
+			}
+		}
+	}
+
+	unsubscribed := make([]string, 0, len(toRemove))
+	for _, id := range toRemove {
+		if err := s.subscriptionManager.Unsubscribe(ctx, id); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to unsubscribe %s: %v", id, err)), nil
+		}
+		unsubscribed = append(unsubscribed, id)
+	}
+
+	return s.marshalResponse(map[string]interface{}{"unsubscribed": unsubscribed})
+}
+
+// handleListSubscriptions handles the opcua_list_subscriptions tool
+func (s *Server) handleListSubscriptions(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if s.subscriptionManager == nil {
+		return subscriptionsUnavailableResult(), nil
+	}
+
+	infos := s.subscriptionManager.ListSubscriptions()
+	response := make([]map[string]interface{}, 0, len(infos))
+	for _, info := range infos {
+		response = append(response, map[string]interface{}{
+			"subscription_id": info.ID,
+			"node_ids":        info.NodeIDs,
+			"interval_ms":     info.IntervalMs,
+			"created_at":      info.CreatedAt,
+		})
+	}
+
+	responseJSON, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal response: %v", err)), nil
+	}
+	return mcp.NewToolResultText(string(responseJSON)), nil
+}
+
+// browseNodesWithDepth recursively browses nodes with depth limit. Delegates
+// to CachingClient since Unit 3 (requirements.md FR-3.4) - each level's
+// browse result is cached, keyed by its own parent node ID.
 func (s *Server) browseNodesWithDepth(ctx context.Context, nodeID string, maxDepth, currentDepth int) ([]map[string]interface{}, error) {
 	if currentDepth >= maxDepth {
 		return nil, nil
 	}
 
 	// Browse the current node
-	references, err := s.opcuaClient.Browse(ctx, nodeID)
+	references, err := s.cachingClient.Browse(ctx, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -921,17 +1109,17 @@ func (s *Server) browseNodesWithDepth(ctx context.Context, nodeID string, maxDep
 	var result []map[string]interface{}
 	for _, ref := range references {
 		nodeInfo := map[string]interface{}{
-			"node_id":         ref.NodeID.String(),
-			"browse_name":     ref.BrowseName.Name,
-			"display_name":    ref.DisplayName.Text,
-			"node_class":      ref.NodeClass.String(),
-			"type_definition": ref.TypeDefinition.String(),
+			"node_id":         ref.NodeID,
+			"browse_name":     ref.BrowseName,
+			"display_name":    ref.DisplayName,
+			"node_class":      ref.NodeClass,
+			"type_definition": ref.TypeDefinition,
 			"depth":           currentDepth,
 		}
 
 		// Recursively browse child nodes if not at max depth
 		if currentDepth < maxDepth-1 {
-			children, err := s.browseNodesWithDepth(ctx, ref.NodeID.String(), maxDepth, currentDepth+1)
+			children, err := s.browseNodesWithDepth(ctx, ref.NodeID, maxDepth, currentDepth+1)
 			if err == nil && len(children) > 0 {
 				nodeInfo["children"] = children
 			}
@@ -960,6 +1148,16 @@ func (s *Server) setupGracefulShutdown() {
 			logger.Error("Error stopping discovery service", "error", err)
 		}
 
+		// Stop the subscription manager (joins its notification pump and its
+		// internal ReconnectWatcher) before the store closes (BR-10) - a
+		// write-after-close from an in-flight batch must never happen. Nil
+		// when the persistent store failed to open at startup (BR-11).
+		if s.subscriptionManager != nil {
+			if err := s.subscriptionManager.Stop(); err != nil {
+				logger.Error("Error stopping subscription manager", "error", err)
+			}
+		}
+
 		// Close the HTTP server so in-flight requests get a chance to drain
 		// before process exit (findings.md H10c). No-op in stdio mode, where
 		// httpServer stays nil.
@@ -975,6 +1173,16 @@ func (s *Server) setupGracefulShutdown() {
 		// Disconnect from OPC-UA server
 		if err := s.opcuaClient.Disconnect(ctx); err != nil {
 			logger.Error("Error disconnecting from OPC-UA server", "error", err)
+		}
+
+		// store.Close() is strictly last (BR-10) - the subscription
+		// manager's pump goroutine has already been joined above, so no
+		// write-after-close race is possible. Nil when store.Open failed at
+		// startup (BR-11).
+		if s.store != nil {
+			if err := s.store.Close(); err != nil {
+				logger.Error("Error closing persistent store", "error", err)
+			}
 		}
 
 		os.Exit(0)
