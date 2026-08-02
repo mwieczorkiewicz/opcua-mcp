@@ -607,101 +607,38 @@ docker run -p 8080:8080 \
 
 ### Docker Compose
 
-#### Basic Setup
+The repo's [`docker-compose.yml`](docker-compose.yml) is a ready-to-use dev/test stack: a
+Microsoft OPC-UA test server (`mcr.microsoft.com/iot/opc-ua-test-server:2.8`, the same one
+used elsewhere in this project), `opcua-mcp` built locally from the [`Dockerfile`](Dockerfile)
+(not pulled from a registry) running in HTTP mode against it, and a `cloudflared` sidecar that
+publishes `opcua-mcp` to the internet over HTTPS.
 
-```yaml
-version: '3.8'
-services:
-  opcua-mcp:
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      - SERVER_TRANSPORT=http
-      - OPCUA_ENDPOINT=opc.tcp://opcua-server:4840
-      - OPCUA_AUTH_MODE=anonymous
-    depends_on:
-      - opcua-server
-    volumes:
-      - ./search_index:/search_index
+```bash
+make compose-build       # build the local opcua-mcp image
+make compose-up-server   # start just the test server, detached, for manual dev use
+make compose-down        # stop everything
 ```
 
-#### Production Setup with Authentication
+#### Testing with a Claude custom connector
 
-```yaml
-version: '3.8'
-services:
-  opcua-mcp:
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      - SERVER_TRANSPORT=http
-      - SERVER_LOG_LEVEL=info
-      - SERVER_LOG_FORMAT=json
-      - OPCUA_ENDPOINT=opc.tcp://opcua-server:4840
-      - OPCUA_AUTH_MODE=username
-      - OPCUA_USERNAME=${OPCUA_USERNAME}
-      - OPCUA_PASSWORD=${OPCUA_PASSWORD}
-      - OPCUA_SECURITY_POLICY=Basic256
-      - OPCUA_SECURITY_MODE=SignAndEncrypt
-      - OPCUA_REQUEST_TIMEOUT=30s
-      - OPCUA_SESSION_TIMEOUT=60s
-      - SEARCH_ENABLE_DISCOVERY=true
-      - SEARCH_DISCOVERY_INTERVAL=30s
-      - SEARCH_MAX_DISCOVERY_DEPTH=10
-    depends_on:
-      - opcua-server
-    volumes:
-      - opcua-mcp-search:/search_index
-      - ./certs:/certs:ro
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/mcp"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+Claude's custom connector URL field (Settings → Connectors → Add custom connector) requires a
+publicly reachable `https://` endpoint — it rejects `http://localhost`, and the connection is
+made from Anthropic's infrastructure, not your machine. `docker-compose.yml` handles this with
+a `cloudflared` "quick tunnel" (Cloudflare's free, no-account tunnel), giving `opcua-mcp` a real
+public HTTPS URL with zero setup:
 
-  opcua-server:
-    image: mcr.microsoft.com/iotedge/opc-plc:latest
-    ports:
-      - "4840:4840"
-    environment:
-      - PLC_SIMULATION_FILE=Boiler1/Boiler1_simulation.json
-    restart: unless-stopped
-
-volumes:
-  opcua-mcp-search:
+```bash
+make compose-up        # starts opcua-server, opcua-mcp (HTTP mode), and the cloudflared tunnel
+make connector-url      # prints the URL to paste into Claude, e.g. https://xyz.trycloudflare.com/mcp
 ```
 
-#### Development Setup with Test Server
+Paste the printed URL into Claude's "Add custom connector" dialog. The tunnel URL is ephemeral
+and regenerates every time the `cloudflared` service restarts, so re-run `make connector-url`
+after any `make compose-up`.
 
-```yaml
-version: '3.8'
-services:
-  opcua-mcp:
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      - SERVER_TRANSPORT=http
-      - SERVER_LOG_LEVEL=debug
-      - OPCUA_ENDPOINT=opc.tcp://opcua-test-server:4840
-      - OPCUA_AUTH_MODE=anonymous
-      - SEARCH_ENABLE_DISCOVERY=true
-      - SEARCH_DISCOVERY_INTERVAL=10s
-    depends_on:
-      - opcua-test-server
-    volumes:
-      - ./search_index:/search_index
-
-  opcua-test-server:
-    image: mcr.microsoft.com/iotedge/opc-plc:latest
-    ports:
-      - "4840:4840"
-    environment:
-      - PLC_SIMULATION_FILE=Boiler1/Boiler1_simulation.json
-```
+> **Security note**: while this stack is running, that URL is reachable by anyone on the
+> internet who has it, and `opcua-mcp` has no authentication of its own. Only run it for active
+> local testing, and stop the stack (`make compose-down`) when you're done.
 
 ### Environment Variables in Docker
 
