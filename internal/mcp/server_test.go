@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/config"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/opcua"
 )
@@ -117,5 +118,123 @@ func TestHTTPServerShutdownClosesListener(t *testing.T) {
 
 	if _, err := net.DialTimeout("tcp", addr, 200*time.Millisecond); err == nil {
 		t.Error("listener still accepting connections after Shutdown()")
+	}
+}
+
+// newTestServer builds a Server against a Client that is constructed but
+// never connected - every handler test below relies on this to reach a
+// handler's argument-validation branch (or its "not connected" I/O-error
+// branch) without ever attempting a real network dial: IsConnected() and the
+// Read/Write/Browse "not connected" checks are all pure in-process checks
+// against Client's unconnected zero state.
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+	cfg := newTestConfig("0")
+	opcuaClient := opcua.NewClient(&cfg.OPCUA)
+	s, err := NewServer(cfg, opcuaClient)
+	if err != nil {
+		t.Fatalf("NewServer() error: %v", err)
+	}
+	return s
+}
+
+func callTool(args map[string]any) mcp.CallToolRequest {
+	return mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: args}}
+}
+
+// TestHandlerRequiredArgumentValidation covers P1-7's baseline: every tool
+// handler with a required string argument must reject a call missing it via
+// IsError, not a Go error return (mcp-go tool handlers report failures
+// in-band).
+func TestHandlerRequiredArgumentValidation(t *testing.T) {
+	s := newTestServer(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+		args    map[string]any
+	}{
+		{"handleRead missing node_ids", s.handleRead, map[string]any{}},
+		{"handleWrite missing node_id", s.handleWrite, map[string]any{"value": "1"}},
+		{"handleWrite missing value", s.handleWrite, map[string]any{"node_id": "i=1"}},
+		{"handleWrite malformed JSON value", s.handleWrite, map[string]any{"node_id": "i=1", "value": "{not json"}},
+		{"handleNodeInfo missing node_id", s.handleNodeInfo, map[string]any{}},
+		{"handleGetValue missing node_id", s.handleGetValue, map[string]any{}},
+		{"handleGetValueByName missing browse_name", s.handleGetValueByName, map[string]any{}},
+		{"handleFindSimilarNodes missing browse_name", s.handleFindSimilarNodes, map[string]any{}},
+		{"handleDebugSearch missing browse_name", s.handleDebugSearch, map[string]any{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tt.handler(ctx, callTool(tt.args))
+			if err != nil {
+				t.Fatalf("handler returned unexpected Go error: %v", err)
+			}
+			if result == nil || !result.IsError {
+				t.Errorf("expected IsError=true for %s, got %+v", tt.name, result)
+			}
+		})
+	}
+}
+
+// TestHandlerNotConnectedErrorBranches covers each handler's error path when
+// the OPC-UA client isn't connected - a pure in-process check, not a network
+// call, so this is safe to run without a live or simulated server.
+func TestHandlerNotConnectedErrorBranches(t *testing.T) {
+	s := newTestServer(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name    string
+		handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+		args    map[string]any
+	}{
+		{"handleRead", s.handleRead, map[string]any{"node_ids": "i=85"}},
+		{"handleWrite", s.handleWrite, map[string]any{"node_id": "i=85", "value": "1"}},
+		{"handleBrowse", s.handleBrowse, map[string]any{}},
+		{"handleNodeInfo", s.handleNodeInfo, map[string]any{"node_id": "i=85"}},
+		{"handleServerInfo", s.handleServerInfo, map[string]any{}},
+		{"handleGetValue", s.handleGetValue, map[string]any{"node_id": "i=85"}},
+		{"handleBrowseNodes", s.handleBrowseNodes, map[string]any{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := tt.handler(ctx, callTool(tt.args))
+			if err != nil {
+				t.Fatalf("handler returned unexpected Go error: %v", err)
+			}
+			if result == nil || !result.IsError {
+				t.Errorf("expected IsError=true against a disconnected client for %s, got %+v", tt.name, result)
+			}
+		})
+	}
+}
+
+// TestHandleDisconnectWhenNotConnected covers handleDisconnect's non-error
+// early-return branch.
+func TestHandleDisconnectWhenNotConnected(t *testing.T) {
+	s := newTestServer(t)
+	result, err := s.handleDisconnect(context.Background(), callTool(nil))
+	if err != nil {
+		t.Fatalf("handleDisconnect() unexpected Go error: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Errorf("expected a non-error result when already disconnected, got %+v", result)
+	}
+}
+
+// TestHandleForceDiscoveryWhenDisabled covers handleForceDiscovery's error
+// branch when EnableDiscovery is false (newTestConfig's default).
+func TestHandleForceDiscoveryWhenDisabled(t *testing.T) {
+	s := newTestServer(t)
+	result, err := s.handleForceDiscovery(context.Background(), callTool(nil))
+	if err != nil {
+		t.Fatalf("handleForceDiscovery() unexpected Go error: %v", err)
+	}
+	if result == nil || !result.IsError {
+		t.Errorf("expected IsError=true when discovery is disabled, got %+v", result)
 	}
 }
