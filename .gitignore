@@ -32,3 +32,4 @@ go.work.sum
 .vscode/launch.json
 search_index/*
 __debug*
+.DS_Store
