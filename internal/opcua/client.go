@@ -28,6 +28,7 @@ type opcuaClient interface {
 	Write(ctx context.Context, req *ua.WriteRequest) (*ua.WriteResponse, error)
 	Browse(ctx context.Context, req *ua.BrowseRequest) (*ua.BrowseResponse, error)
 	BrowseNext(ctx context.Context, req *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error)
+	Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (*opcua.Subscription, error)
 }
 
 // var _ opcuaClient documents (and fails to compile if broken by an upstream
@@ -40,6 +41,7 @@ type Client struct {
 	client    opcuaClient
 	config    *config.OPCUAConfig // immutable post-construction; not guarded by mu
 	connected bool
+	stateCh   chan<- opcua.ConnState // registered via SetStateChangeChannel; nil unless a caller (ReconnectWatcher) wants state-change notifications
 }
 
 // snapshot returns a consistent read of the current client/connected state.
@@ -65,6 +67,17 @@ func (c *Client) Connect(ctx context.Context) error {
 	opts := []opcua.Option{
 		opcua.RequestTimeout(c.config.RequestTimeout),
 		opcua.SessionTimeout(c.config.SessionTimeout),
+	}
+
+	// Include the registered state-change channel (if any) on every
+	// (re)connect - Connect always constructs a brand-new underlying gopcua
+	// client, so gopcua's StateChangedCh option must be supplied again each
+	// time rather than just once at initial construction.
+	c.mu.RLock()
+	stateCh := c.stateCh
+	c.mu.RUnlock()
+	if stateCh != nil {
+		opts = append(opts, opcua.StateChangedCh(stateCh))
 	}
 
 	// Add security policy and mode
@@ -139,6 +152,32 @@ func (c *Client) addCertificateAuth(opts []opcua.Option) ([]opcua.Option, error)
 	opts = append(opts, opcua.AuthCertificate(cert.Certificate[0]))
 
 	return opts, nil
+}
+
+// SetStateChangeChannel registers ch to receive gopcua connection state
+// changes on every future (re)connect. Connect() includes
+// opcua.StateChangedCh(ch) in its options whenever ch is non-nil.
+func (c *Client) SetStateChangeChannel(ch chan<- opcua.ConnState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stateCh = ch
+}
+
+// Subscribe creates a new OPC-UA subscription and returns it as the narrow
+// subscriptionHandle interface (defined in subscription.go) rather than the
+// concrete *opcua.Subscription, so SubscriptionManager's tests can inject a
+// mock in its place.
+func (c *Client) Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (subscriptionHandle, error) {
+	client, connected := c.snapshot()
+	if !connected || client == nil {
+		return nil, fmt.Errorf("client is not connected")
+	}
+
+	sub, err := client.Subscribe(ctx, params, notifyCh)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create subscription: %w", err)
+	}
+	return sub, nil
 }
 
 // Disconnect closes the connection to the OPC-UA server

@@ -3,6 +3,7 @@ package opcua
 import (
 	"context"
 
+	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/ua"
 )
 
@@ -14,11 +15,13 @@ type mockOpcuaClient struct {
 	writeFunc      func(ctx context.Context, req *ua.WriteRequest) (*ua.WriteResponse, error)
 	browseFunc     func(ctx context.Context, req *ua.BrowseRequest) (*ua.BrowseResponse, error)
 	browseNextFunc func(ctx context.Context, req *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error)
+	subscribeFunc  func(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (*opcua.Subscription, error)
 
 	readCalls       int
 	writeCalls      int
 	browseCalls     int
 	browseNextCalls int
+	subscribeCalls  int
 }
 
 func (m *mockOpcuaClient) Connect(ctx context.Context) error { return nil }
@@ -54,6 +57,20 @@ func (m *mockOpcuaClient) BrowseNext(ctx context.Context, req *ua.BrowseNextRequ
 		return m.browseNextFunc(ctx, req)
 	}
 	return &ua.BrowseNextResponse{}, nil
+}
+
+// Subscribe exists only to satisfy opcuaClient - Client.client's low-level
+// interface needs it to match *opcua.Client's real signature exactly (see
+// client.go), but no test drives subscriptions through this seam: gopcua's
+// concrete *opcua.Subscription can't be faked here (unexported fields), so
+// SubscriptionManager's own tests mock the separate, purpose-built
+// subscribingClient/subscriptionHandle interfaces in subscription.go instead.
+func (m *mockOpcuaClient) Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (*opcua.Subscription, error) {
+	m.subscribeCalls++
+	if m.subscribeFunc != nil {
+		return m.subscribeFunc(ctx, params, notifyCh)
+	}
+	return nil, nil
 }
 
 // singleAttrReadResponse builds a ReadResponse with one OK result carrying

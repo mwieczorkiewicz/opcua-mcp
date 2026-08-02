@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/blevesearch/bleve/v2 v2.5.3
 	github.com/caarlos0/env/v11 v11.4.1
+	github.com/google/uuid v1.6.0
 	github.com/gopcua/opcua v0.9.0
 	github.com/mark3labs/mcp-go v0.39.1
 	go.etcd.io/bbolt v1.5.0
@@ -35,7 +36,6 @@ require (
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/golang/protobuf v1.3.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/json-iterator/go v0.0.0-20171115153421-f7279a603ede // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
