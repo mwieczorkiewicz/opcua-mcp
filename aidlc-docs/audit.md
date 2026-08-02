@@ -279,3 +279,27 @@
 **Context**: Unit 2 NFR Requirements Steps 6-7, awaiting explicit approval before proceeding to NFR Design.
 
 ---
+
+## Unit 2 — NFR Requirements Approval
+**Timestamp**: 2026-08-02T03:05:00Z
+**User Input**: "approve"
+**AI Response**: NFR requirements approved as-is. Proceeding to NFR Design.
+**Context**: Unit 2 NFR Requirements stage complete.
+
+---
+
+## Unit 2 — NFR Design Plan Presented
+**Timestamp**: 2026-08-02T03:10:00Z
+**User Input**: (n/a — AI-initiated)
+**AI Response**: Created `aidlc-docs/construction/plans/unit-2-subscription-management-nfr-design-plan.md`. Most categories already resolved (resilience/scalability/performance/security patterns all already fully specified by prior stages). One open question: whether SubscriptionManager should enforce its own client-side subscription/monitored-item cap, or rely entirely on server-side rejection via BR-4's existing partial-failure handling (recommended). Presenting for answer.
+**Context**: Unit 2 NFR Design Step 4/5 gate.
+
+---
+
+## Unit 2 — NFR Design Artifacts Generated
+**Timestamp**: 2026-08-02T03:15:00Z
+**User Input**: "continue" (Q1=A no client-side cap, rely on server-side rejection via existing partial-failure handling)
+**AI Response**: Generated nfr-design-patterns.md and logical-components.md. Confirmed the mutex+snapshot concurrency pattern applies to SubscriptionManager (not ReconnectWatcher, whose only mutable state is single-goroutine-confined) and that testing extends the existing opcuaClient mock seam rather than introducing a parallel one. Presenting for approval before proceeding to Code Generation (Infrastructure Design skipped, as with every unit).
+**Context**: Unit 2 NFR Design Steps 6-7, awaiting explicit approval before proceeding to Code Generation.
+
+---
