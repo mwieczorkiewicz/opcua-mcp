@@ -143,3 +143,11 @@
 **Context**: Unit 1 Functional Design Step 4/5 gate.
 
 ---
+
+## Unit 1 (Persistent Store) — Functional Design Artifacts Generated
+**Timestamp**: 2026-08-02T01:35:00Z
+**User Input**: "commit changes in logical chunks, and continue" (answers to the 5 functional design questions: Q1=A dumb key-value store no expiry logic, Q2=B preserve exact type fidelity via tagged encoding, Q3=B validate non-empty keys, Q4=A no additional locking beyond bbolt transactions, Q5=A wrap Open() errors with a stale-lock hint)
+**AI Response**: Committed all pending AIDLC planning artifacts (execution-plan.md, application-design/*, units-generation/*, this functional-design plan) in 4 logical commits per the user's request, then reviewed the 5 functional-design answers (coherent, no ambiguity) and generated domain-entities.md (ValueEntry/TypeInfoEntry/BrowseEntry/SubscriptionIntent plus the internal encodedValue type-fidelity wrapper), business-rules.md (BR-1 through BR-7), and business-logic-model.md (Open/PutValue/GetValue/encode/decode flowcharts). Presenting for approval.
+**Context**: Unit 1 Functional Design Steps 6-7, awaiting explicit approval before proceeding to NFR Requirements.
+
+---

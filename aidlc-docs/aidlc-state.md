@@ -56,7 +56,7 @@ per the approved plan at `/Users/mikolajwieczorkiewicz/.claude/plans/lucky-huggi
 
 ## Construction Progress
 ### Unit 1 — Persistent Store
-- [ ] Functional Design — in progress
+- [x] Functional Design — domain-entities.md, business-rules.md, business-logic-model.md generated, awaiting user approval
 - [ ] NFR Requirements
 - [ ] NFR Design
 - [ ] Infrastructure Design — SKIP (no infra-as-code in this project)
