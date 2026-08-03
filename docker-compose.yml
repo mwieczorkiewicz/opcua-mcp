@@ -6,7 +6,7 @@ services:
       - "4840:4840"
 
   opcua-mcp:
-    image: ghcr.io/mwieczorkiewicz/opcua-mcp:main-f0b638d
+    image: ghcr.io/mwieczorkiewicz/opcua-mcp:main-857a30f
     depends_on:
       - opcua-server
     restart: unless-stopped
