@@ -8,6 +8,7 @@ import (
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/config"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/logger"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/store"
+	"github.com/mwieczorkiewicz/opcua-mcp/internal/telemetry"
 )
 
 // valueTypeBrowseStore is the narrow slice of store.Store's surface
@@ -47,12 +48,19 @@ type CachingClient struct {
 
 	typeInfoTTL time.Duration
 	browseTTL   time.Duration
+
+	telemetry telemetry.Telemetry
 }
 
 // NewCachingClient constructs a CachingClient. typeInfoTTL/browseTTL come
 // from config.StoreConfig (STORE_TYPEINFO_TTL/STORE_BROWSE_TTL) - passed
 // explicitly rather than the whole StoreConfig struct, since those are the
 // only two fields this component needs (functional-design/domain-entities.md).
+// telemetry defaults to a no-op (matching telemetry.New's own disabled-mode
+// return value); the caller wires up a real one via SetTelemetry after
+// construction, mirroring Client's existing SetStateChangeChannel/
+// SetConnectedForTesting post-construction setter pattern rather than
+// growing this constructor's parameter list further.
 func NewCachingClient(client *Client, cache valueTypeBrowseStore, searchCfg *config.SearchConfig, typeInfoTTL, browseTTL time.Duration) *CachingClient {
 	return &CachingClient{
 		client:      client,
@@ -60,7 +68,14 @@ func NewCachingClient(client *Client, cache valueTypeBrowseStore, searchCfg *con
 		cfg:         searchCfg,
 		typeInfoTTL: typeInfoTTL,
 		browseTTL:   browseTTL,
+		telemetry:   telemetry.New(telemetry.Config{}),
 	}
+}
+
+// SetTelemetry wires up a real Telemetry instance, replacing the no-op
+// default NewCachingClient constructs.
+func (c *CachingClient) SetTelemetry(tel telemetry.Telemetry) {
+	c.telemetry = tel
 }
 
 // Read serves each requested node from the values-bucket cache when
@@ -83,6 +98,7 @@ func (c *CachingClient) Read(ctx context.Context, nodeIDs []string, maxAgeMs int
 			ok = false
 		}
 		if !ok {
+			c.telemetry.RecordCacheResult(false)
 			liveIdx = append(liveIdx, i)
 			liveIDs = append(liveIDs, nodeID)
 			continue
@@ -90,17 +106,21 @@ func (c *CachingClient) Read(ctx context.Context, nodeIDs []string, maxAgeMs int
 
 		switch entry.Source {
 		case "subscription":
+			c.telemetry.RecordCacheResult(true)
 			results[i] = valueEntryToReadResult(nodeID, entry, "subscription")
 		case "live":
 			if time.Since(entry.ReceivedAt) <= maxAge {
+				c.telemetry.RecordCacheResult(true)
 				results[i] = valueEntryToReadResult(nodeID, entry, "cache")
 			} else {
+				c.telemetry.RecordCacheResult(false)
 				liveIdx = append(liveIdx, i)
 				liveIDs = append(liveIDs, nodeID)
 			}
 		default:
 			// Unknown/empty provenance - treat like a miss rather than
 			// trusting an entry we can't classify.
+			c.telemetry.RecordCacheResult(false)
 			liveIdx = append(liveIdx, i)
 			liveIDs = append(liveIDs, nodeID)
 		}
@@ -179,10 +199,15 @@ func valueEntryToReadResult(nodeID string, entry store.ValueEntry, source string
 func (c *CachingClient) Browse(ctx context.Context, nodeID string) ([]store.BrowseReference, error) {
 	if c.cfg.EnableCache {
 		entry, ok, err := c.cache.GetBrowse(ctx, nodeID)
-		if err != nil {
+		switch {
+		case err != nil:
 			logger.Warn("CachingClient: browse cache read failed, falling back to live", "node_id", nodeID, "error", err)
-		} else if ok && time.Since(entry.CachedAt) <= c.browseTTL {
+			c.telemetry.RecordCacheResult(false)
+		case ok && time.Since(entry.CachedAt) <= c.browseTTL:
+			c.telemetry.RecordCacheResult(true)
 			return entry.References, nil
+		default:
+			c.telemetry.RecordCacheResult(false)
 		}
 	}
 
@@ -217,10 +242,15 @@ func (c *CachingClient) Browse(ctx context.Context, nodeID string) ([]store.Brow
 func (c *CachingClient) GetNodeTypeInfo(ctx context.Context, nodeID string) (*NodeTypeInfo, error) {
 	if c.cfg.EnableCache {
 		entry, ok, err := c.cache.GetTypeInfo(ctx, nodeID)
-		if err != nil {
+		switch {
+		case err != nil:
 			logger.Warn("CachingClient: typeinfo cache read failed, falling back to live", "node_id", nodeID, "error", err)
-		} else if ok && time.Since(entry.CachedAt) <= c.typeInfoTTL {
+			c.telemetry.RecordCacheResult(false)
+		case ok && time.Since(entry.CachedAt) <= c.typeInfoTTL:
+			c.telemetry.RecordCacheResult(true)
 			return typeInfoEntryToNodeTypeInfo(entry), nil
+		default:
+			c.telemetry.RecordCacheResult(false)
 		}
 	}
 

@@ -8,6 +8,7 @@ import (
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/mcp"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/opcua"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/store"
+	"github.com/mwieczorkiewicz/opcua-mcp/internal/telemetry"
 )
 
 func main() {
@@ -96,6 +97,18 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to create MCP server", "error", err)
 	}
+
+	// Telemetry (see internal/telemetry/telemetry.go for what is/isn't
+	// collected). Static session dimensions (transport/auth mode/security
+	// policy/version) come from the already-loaded cfg rather than being
+	// re-parsed from the environment a second time. Opt out via
+	// DO_NOT_TRACK=1 or OPCUA_MCP_TELEMETRY=false.
+	telemetryCfg := telemetry.LoadConfig()
+	telemetryCfg.Transport = cfg.Server.Transport
+	telemetryCfg.AuthMode = cfg.OPCUA.AuthMode
+	telemetryCfg.SecurityPolicy = cfg.OPCUA.SecurityPolicy
+	telemetryCfg.ServerVersion = cfg.MCP.Version
+	mcpServer.SetTelemetry(telemetry.New(telemetryCfg))
 
 	// Start MCP server
 	if err := mcpServer.Start(); err != nil {

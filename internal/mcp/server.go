@@ -18,6 +18,7 @@ import (
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/logger"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/opcua"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/store"
+	"github.com/mwieczorkiewicz/opcua-mcp/internal/telemetry"
 )
 
 // Server wraps the MCP server with OPC-UA functionality
@@ -29,6 +30,12 @@ type Server struct {
 	discovery           *opcua.DiscoveryService
 	config              *config.Config
 	store               *store.Store // nil if store.Open failed (BR-11); Close()'d strictly last during shutdown (BR-10)
+	telemetry           telemetry.Telemetry
+
+	// telemetryCancel stops telemetry's flush loop; set by Start(), called by
+	// setupGracefulShutdown() before telemetry.Close() waits for the final
+	// flush to be dispatched.
+	telemetryCancel context.CancelFunc
 
 	// httpServerMu guards httpServer, which is set by startHTTP() and read by
 	// setupGracefulShutdown()'s signal-handling goroutine; it stays nil in
@@ -46,7 +53,23 @@ type Server struct {
 // both nil when the store failed to open at startup (BR-11); cachingClient
 // is never nil (the caller constructs it with EnableCache forced false in
 // that case instead).
+//
+// telemetry defaults to a no-op; the caller wires up a real one via
+// SetTelemetry before calling Start(). The Server value itself (srv below)
+// is constructed before the underlying *server.MCPServer so its
+// telemetryMiddleware method value can be registered as a
+// WithToolHandlerMiddleware - the middleware reads srv.telemetry at each
+// call, so it observes whatever SetTelemetry later assigns.
 func NewServer(cfg *config.Config, opcuaClient *opcua.Client, cachingClient *opcua.CachingClient, subscriptionManager *opcua.SubscriptionManager, st *store.Store) (*Server, error) {
+	srv := &Server{
+		opcuaClient:         opcuaClient,
+		cachingClient:       cachingClient,
+		subscriptionManager: subscriptionManager,
+		config:              cfg,
+		store:               st,
+		telemetry:           telemetry.New(telemetry.Config{}),
+	}
+
 	// Create MCP server with capabilities
 	s := server.NewMCPServer(
 		cfg.MCP.Name,
@@ -56,6 +79,7 @@ func NewServer(cfg *config.Config, opcuaClient *opcua.Client, cachingClient *opc
 		server.WithPromptCapabilities(cfg.MCP.EnablePrompts),
 		server.WithLogging(),
 		server.WithRecovery(),
+		server.WithToolHandlerMiddleware(srv.telemetryMiddleware),
 	)
 
 	// Create discovery service
@@ -64,15 +88,19 @@ func NewServer(cfg *config.Config, opcuaClient *opcua.Client, cachingClient *opc
 		return nil, fmt.Errorf("failed to create discovery service: %w", err)
 	}
 
-	return &Server{
-		mcpServer:           s,
-		opcuaClient:         opcuaClient,
-		cachingClient:       cachingClient,
-		subscriptionManager: subscriptionManager,
-		discovery:           discovery,
-		config:              cfg,
-		store:               st,
-	}, nil
+	srv.mcpServer = s
+	srv.discovery = discovery
+	return srv, nil
+}
+
+// SetTelemetry wires up a real Telemetry instance, replacing the no-op
+// default NewServer constructs, and propagates it to the CachingClient
+// (cache hit/miss) and DiscoveryService (node-count gauge) instances Server
+// owns, so cmd/opcua-mcp.go only needs this single call to wire up all three.
+func (s *Server) SetTelemetry(tel telemetry.Telemetry) {
+	s.telemetry = tel
+	s.cachingClient.SetTelemetry(tel)
+	s.discovery.SetTelemetry(tel)
 }
 
 // SetupTools registers all OPC-UA tools with the MCP server
@@ -716,6 +744,14 @@ func (s *Server) Start() error {
 		logger.Warn("Failed to start discovery service", "error", err)
 	}
 
+	// Start telemetry's periodic flush loop. telemetryCtx is canceled by
+	// setupGracefulShutdown() to trigger the final flush before
+	// telemetry.Close() waits for it to be dispatched. A no-op Telemetry
+	// (the default, or when disabled) makes Start/Close free no-ops too.
+	telemetryCtx, cancel := context.WithCancel(context.Background())
+	s.telemetryCancel = cancel
+	s.telemetry.Start(telemetryCtx)
+
 	// Start server based on transport mode
 	switch s.config.Server.Transport {
 	case "stdio":
@@ -1184,6 +1220,16 @@ func (s *Server) setupGracefulShutdown() {
 				logger.Error("Error closing persistent store", "error", err)
 			}
 		}
+
+		// Cancel telemetry's flush loop (triggers one final flush) and wait
+		// for that flush's send attempt to finish, bounded by the HTTP
+		// client's own 2s timeout - independent of the store/OPC-UA client,
+		// so ordered last is only to keep this shutdown sequence's shape
+		// consistent (most-important-first).
+		if s.telemetryCancel != nil {
+			s.telemetryCancel()
+		}
+		s.telemetry.Close()
 
 		os.Exit(0)
 	}()

@@ -10,6 +10,7 @@ import (
 	"github.com/blevesearch/bleve/v2"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/config"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/logger"
+	"github.com/mwieczorkiewicz/opcua-mcp/internal/telemetry"
 )
 
 // NodeInfo represents information about an OPC-UA node
@@ -49,6 +50,8 @@ type DiscoveryService struct {
 	// walkGen is the current discovery generation, incremented once per walk
 	// under discoveryMu.
 	walkGen uint64
+
+	telemetry telemetry.Telemetry
 }
 
 // NewDiscoveryService creates a new discovery service
@@ -94,7 +97,14 @@ func NewDiscoveryService(client *Client, cfg *config.SearchConfig) (*DiscoverySe
 		index:     index,
 		nodeCache: make(map[string]*NodeInfo),
 		stopChan:  make(chan struct{}),
+		telemetry: telemetry.New(telemetry.Config{}),
 	}, nil
+}
+
+// SetTelemetry wires up a real Telemetry instance, replacing the no-op
+// default NewDiscoveryService constructs.
+func (ds *DiscoveryService) SetTelemetry(tel telemetry.Telemetry) {
+	ds.telemetry = tel
 }
 
 // Start starts the discovery service
@@ -200,6 +210,8 @@ func (ds *DiscoveryService) discoverNodes(ctx context.Context) error {
 	}
 	cacheSize := len(ds.nodeCache)
 	ds.cacheMutex.Unlock()
+
+	ds.telemetry.SetDiscoveryStats(cacheSize)
 
 	logger.Info("Node discovery completed", "discovered_nodes", discovered, "cache_size", cacheSize, "swept_nodes", len(swept), "generation", currentGen)
 
