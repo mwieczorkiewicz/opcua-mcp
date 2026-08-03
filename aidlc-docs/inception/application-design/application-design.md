@@ -1,4 +1,4 @@
-# Application Design — Phase 2 (Consolidated)
+# Application Design - Phase 2 (Consolidated)
 
 Consolidates `components.md`, `component-methods.md`, `services.md`, and
 `component-dependency.md` into a single reference. See those files for full
@@ -6,23 +6,23 @@ detail; this is the summary.
 
 ## Scope correction
 `requirements.md` FR-1.3 listed a `nodes` bucket carried over from an
-earlier sketch about discovery-cache warm-loading — never actually
+earlier sketch about discovery-cache warm-loading - never actually
 requested in this pass's functional requirements. Dropped: store scope is
 **4 buckets** (`values`, `typeinfo`, `browse`, `subscriptions`), not 5.
 
 ## Design decisions (from `application-design-plan.md`)
 1. **`ReconnectWatcher` is a separate component**, not embedded in
-   `SubscriptionManager` — testable in isolation.
+   `SubscriptionManager` - testable in isolation.
 2. **`store.Store` uses strongly-typed methods per bucket** (~11 methods
-   total across 4 buckets), not a generic `Get[T]`/`Put[T]` API — consistent
+   total across 4 buckets), not a generic `Get[T]`/`Put[T]` API - consistent
    with this codebase's existing style (no generics used elsewhere;
    `Client`'s per-attribute methods are individually typed too).
 3. **Read-through caching lives in a new `CachingClient` decorator**, not
-   inside `Client` itself — `Client` stays a pure OPC-UA protocol wrapper;
+   inside `Client` itself - `Client` stays a pure OPC-UA protocol wrapper;
    `mcp.Server` swaps which concrete type it calls for read/browse/typeinfo.
 4. **Consumers depend on narrow, consumer-defined interfaces over
    `store.Store`** (`valueTypeBrowseStore`, `subscriptionStore`), mirroring
-   the existing `opcuaClient` mock-seam pattern — `store.Store`'s own tests
+   the existing `opcuaClient` mock-seam pattern - `store.Store`'s own tests
    use a real bbolt instance in a temp dir (no mock needed there; bbolt is
    embedded/in-process, unlike the networked gopcua dependency).
 5. **`SubscriptionManager` follows the established mutex+snapshot
@@ -47,7 +47,7 @@ requested in this pass's functional requirements. Dropped: store scope is
 ## Key open item carried to Functional Design
 How `CachingClient` learns "is this node currently subscribed" (for
 `source="subscription"` responses) without a direct dependency on
-`SubscriptionManager` — recommendation is to carry provenance in
+`SubscriptionManager` - recommendation is to carry provenance in
 `store.ValueEntry` itself (the pump writes `Source: "subscription"` when it
 writes; `CachingClient` just reads whatever `Source` is already stored).
 Confirm this when the relevant unit's Functional Design starts.

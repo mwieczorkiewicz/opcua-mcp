@@ -226,7 +226,7 @@ func TestClientGetServerInfoWhenNotConnected(t *testing.T) {
 // SetConnectedForTesting() toggles state from another, to exercise P0-1's mutex
 // under `go test -race`. c.client is never assigned a live connection here, so
 // Read() always short-circuits on the "not connected" check before touching the
-// zero-value *opcua.Client — this validates the mu-guarded field access itself,
+// zero-value *opcua.Client - this validates the mu-guarded field access itself,
 // not real RPC behavior.
 func TestClientConcurrentAccess(t *testing.T) {
 	cfg := &config.OPCUAConfig{

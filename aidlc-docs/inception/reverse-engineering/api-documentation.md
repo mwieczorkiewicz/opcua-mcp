@@ -1,6 +1,6 @@
 # API Documentation
 
-This server exposes no REST API — its only external-facing surface is the
+This server exposes no REST API - its only external-facing surface is the
 Model Context Protocol (MCP), over stdio or one streamable-HTTP endpoint
 (`MCP_HTTP_PATH`, default `/mcp`). All 15 tools below are registered in
 `internal/mcp/server.go`'s `SetupTools()`.
@@ -10,19 +10,19 @@ Model Context Protocol (MCP), over stdio or one streamable-HTTP endpoint
 ### `opcua_read`
 - **Handler**: `handleRead` → `Client.Read`
 - **Purpose**: Read one or more node values.
-- **Request**: `node_ids` (required, string — single/CSV/JSON-array node IDs)
+- **Request**: `node_ids` (required, string - single/CSV/JSON-array node IDs)
 - **Response**: JSON array of `{node_id, value, status, source_timestamp, server_timestamp}`, one per requested node (partial results preserved even if some nodes have a bad status).
 
 ### `opcua_write`
 - **Handler**: `handleWrite` → `Client.GetNodeTypeInfo` + `Client.Write`
 - **Purpose**: Write a type-validated, type-converted value to a node.
-- **Request**: `node_id` (required, string), `value` (required, string — JSON-encoded)
+- **Request**: `node_id` (required, string), `value` (required, string - JSON-encoded)
 - **Response**: Success/error text including the node's type information (data type, access level, writability) to help diagnose a rejected write.
 
 ### `opcua_browse`
 - **Handler**: `handleBrowse` → `Client.Browse`
 - **Purpose**: Browse one level of a node's children.
-- **Request**: `node_id` (optional, default `i=85` — Objects folder)
+- **Request**: `node_id` (optional, default `i=85` - Objects folder)
 - **Response**: JSON array of `{node_id, browse_name, display_name, node_class, type_definition}`.
 
 ### `opcua_node_info`
@@ -101,23 +101,23 @@ Model Context Protocol (MCP), over stdio or one streamable-HTTP endpoint
 
 ### `opcua.Client` (`internal/opcua/client.go`)
 - `Connect(ctx) error`, `Disconnect(ctx) error`, `IsConnected() bool`
-- `Read(ctx, nodeIDs []string) ([]*ua.DataValue, error)` — per-node partial
+- `Read(ctx, nodeIDs []string) ([]*ua.DataValue, error)` - per-node partial
   results; only transport-level failures return a top-level error.
-- `Write(ctx, nodeID string, value interface{}) error` — fetches
+- `Write(ctx, nodeID string, value interface{}) error` - fetches
   `GetNodeTypeInfo` once, validates via `ValidateValueForNode`, converts via
   `convertValueToOPCUAType`, then writes; returns an error (not just a
   logged warning) on validation failure.
-- `Browse(ctx, nodeID string) ([]*ua.ReferenceDescription, error)` — follows
+- `Browse(ctx, nodeID string) ([]*ua.ReferenceDescription, error)` - follows
   `BrowseNext` continuation points, bounded by `ctx` and a hard iteration cap.
 - `GetNodeClass`/`GetNodeDataType`/`GetNodeValueRank`/`GetNodeArrayDimensions`/
-  `GetNodeAccessLevel`/`GetNodeUserAccessLevel`(ctx, nodeID) — single-attribute
+  `GetNodeAccessLevel`/`GetNodeUserAccessLevel`(ctx, nodeID) - single-attribute
   reads underlying `GetNodeTypeInfo`.
-- `GetNodeTypeInfo(ctx, nodeID) (*NodeTypeInfo, error)` — 5 reads, aggregated.
-- `ValidateValueForNode(value, typeInfo *NodeTypeInfo) error` — takes an
+- `GetNodeTypeInfo(ctx, nodeID) (*NodeTypeInfo, error)` - 5 reads, aggregated.
+- `ValidateValueForNode(value, typeInfo *NodeTypeInfo) error` - takes an
   already-fetched `NodeTypeInfo` (no redundant fetch).
 
 ### `opcua.DiscoveryService` (`internal/opcua/discovery.go`)
-- `Start(ctx) error`/`Stop() error` — ticker-driven background worker lifecycle.
+- `Start(ctx) error`/`Stop() error` - ticker-driven background worker lifecycle.
 - `GetNodeInfo(nodeID) (*NodeInfo, error)`, `GetAllNodes() []*NodeInfo`,
   `GetNodeHierarchy(nodeID) ([]*NodeInfo, error)`.
 - `GetNodeByBrowseName(browseName) (*NodeInfo, error)`,

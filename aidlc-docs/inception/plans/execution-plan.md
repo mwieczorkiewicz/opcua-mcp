@@ -1,18 +1,18 @@
-# Execution Plan — Phase 2: Subscriptions + Persistent Cache
+# Execution Plan - Phase 2: Subscriptions + Persistent Cache
 
 ## Detailed Analysis Summary
 
 ### Transformation Scope (Brownfield)
-- **Transformation Type**: Application-layer feature addition — no infrastructure/deployment-model transformation (still a single Go binary/container, no Lambda/ECS/cloud-resource changes).
+- **Transformation Type**: Application-layer feature addition - no infrastructure/deployment-model transformation (still a single Go binary/container, no Lambda/ECS/cloud-resource changes).
 - **Primary Changes**: New `internal/store` package (bbolt persistence); new `internal/opcua/subscription.go` (`SubscriptionManager`); read-through caching added to existing read/browse/type-info paths; 3 new MCP tools; config additions/cleanup.
 - **Related Components**: `internal/opcua/client.go`, `internal/opcua/discovery.go`, `internal/mcp/server.go`, `internal/config/config.go`, `cmd/opcua-mcp.go`, `Dockerfile`, `README.md`, `Makefile` (new integration-test target), plus new test-only dependency `testcontainers-go`.
 
 ### Change Impact Assessment
-- **User-facing changes**: Yes — 3 new MCP tools (`opcua_subscribe`/`opcua_unsubscribe`/`opcua_list_subscriptions`); `opcua_read` gains `max_age_ms`/`source`/`cached_at`.
-- **Structural changes**: Yes — new package (`internal/store`), new file (`internal/opcua/subscription.go`), `Client`/`DiscoveryService` gain cache-aware read paths.
-- **Data model changes**: Yes — 5 new bbolt bucket schemas (`values`, `typeinfo`, `browse`, `nodes`, `subscriptions`).
-- **API changes**: Yes — additive MCP tool surface; `opcua_read`'s response shape may change (explicitly not backward-compat-constrained, per requirements.md FR-3.3/Q9).
-- **NFR impact**: Yes — reliability (reconnect handling via gopcua v0.9.0's verified internal behavior), performance (redundant round-trip reduction via caching), security (new dependency pinning: bbolt v1.5.x, testcontainers-go), testability (new PBT + integration-test infrastructure).
+- **User-facing changes**: Yes - 3 new MCP tools (`opcua_subscribe`/`opcua_unsubscribe`/`opcua_list_subscriptions`); `opcua_read` gains `max_age_ms`/`source`/`cached_at`.
+- **Structural changes**: Yes - new package (`internal/store`), new file (`internal/opcua/subscription.go`), `Client`/`DiscoveryService` gain cache-aware read paths.
+- **Data model changes**: Yes - 5 new bbolt bucket schemas (`values`, `typeinfo`, `browse`, `nodes`, `subscriptions`).
+- **API changes**: Yes - additive MCP tool surface; `opcua_read`'s response shape may change (explicitly not backward-compat-constrained, per requirements.md FR-3.3/Q9).
+- **NFR impact**: Yes - reliability (reconnect handling via gopcua v0.9.0's verified internal behavior), performance (redundant round-trip reduction via caching), security (new dependency pinning: bbolt v1.5.x, testcontainers-go), testability (new PBT + integration-test infrastructure).
 
 ### Component Relationships
 
@@ -40,8 +40,8 @@
 
 ### Risk Assessment
 - **Risk Level**: Medium. New concurrency and persistence surface, but scoped to `internal/opcua`/`internal/store`/`internal/mcp` only (no infra/deployment-model change), builds on a now-verified-safe gopcua v0.9.0 reconnect model, and reuses this project's established `opcuaClient` mock-seam testing pattern.
-- **Rollback Complexity**: Easy-to-Moderate — additive feature; existing behavior is preserved exactly when `SEARCH_ENABLE_CACHE=false` and no subscriptions are created; a straightforward `git revert` if needed since Phase 2 doesn't modify Phase 0/1 code paths' core logic, only adds cache-aware branches around them.
-- **Testing Complexity**: Complex — new integration-test infrastructure (testcontainers-go + Microsoft OPC-UA test server image) alongside the existing mocked-unit-test style, plus new PBT infrastructure (framework TBD, NFR-3.4).
+- **Rollback Complexity**: Easy-to-Moderate - additive feature; existing behavior is preserved exactly when `SEARCH_ENABLE_CACHE=false` and no subscriptions are created; a straightforward `git revert` if needed since Phase 2 doesn't modify Phase 0/1 code paths' core logic, only adds cache-aware branches around them.
+- **Testing Complexity**: Complex - new integration-test infrastructure (testcontainers-go + Microsoft OPC-UA test server image) alongside the existing mocked-unit-test style, plus new PBT infrastructure (framework TBD, NFR-3.4).
 
 ## Workflow Visualization
 
@@ -134,22 +134,22 @@ OPERATIONS: placeholder
 - [x] Workspace Detection (COMPLETED)
 - [x] Reverse Engineering (COMPLETED)
 - [x] Requirements Analysis (COMPLETED)
-- [x] User Stories (SKIPPED — single user type/LLM client, well-defined tool contracts, no divergent user journeys; user accepted this recommendation)
-- [x] Workflow Planning (IN PROGRESS — this document)
+- [x] User Stories (SKIPPED - single user type/LLM client, well-defined tool contracts, no divergent user journeys; user accepted this recommendation)
+- [x] Workflow Planning (IN PROGRESS - this document)
 - [ ] Application Design - **EXECUTE**
-  - **Rationale**: Two genuinely new components (`SubscriptionManager`, `store.Store`) need their method signatures, responsibilities, and dependencies defined before units can be meaningfully scoped — this isn't a change within existing component boundaries.
+  - **Rationale**: Two genuinely new components (`SubscriptionManager`, `store.Store`) need their method signatures, responsibilities, and dependencies defined before units can be meaningfully scoped - this isn't a change within existing component boundaries.
 - [ ] Units Generation - **EXECUTE**
-  - **Rationale**: New data models/schemas (5 bbolt buckets), new API surface (3 tools), complex state management (subscription lifecycle + reconnect), and changes spanning 6 files/packages — squarely meets the Units Generation trigger criteria.
+  - **Rationale**: New data models/schemas (5 bbolt buckets), new API surface (3 tools), complex state management (subscription lifecycle + reconnect), and changes spanning 6 files/packages - squarely meets the Units Generation trigger criteria.
 
 ### 🟢 CONSTRUCTION PHASE (evaluated per-unit; initial expectation below, refined when each unit's design starts)
 - [ ] Functional Design - **EXECUTE**
-  - **Rationale**: Real business logic needing detailed design in at least two units — the store's typed bucket schema/TTL semantics, and the subscription manager's reconnect/persistence state machine.
+  - **Rationale**: Real business logic needing detailed design in at least two units - the store's typed bucket schema/TTL semantics, and the subscription manager's reconnect/persistence state machine.
 - [ ] NFR Requirements - **EXECUTE**
   - **Rationale**: A genuine tech-stack selection is still open (PBT framework, requirements.md NFR-3.4), plus the security/resiliency NFRs from requirements.md need incorporating into each unit's design.
 - [ ] NFR Design - **EXECUTE**
-  - **Rationale**: Follows from NFR Requirements executing — the selected PBT framework and the applicable resiliency/security patterns (timeouts, graceful degradation, dependency pinning) need to land in the actual per-unit designs.
+  - **Rationale**: Follows from NFR Requirements executing - the selected PBT framework and the applicable resiliency/security patterns (timeouts, graceful degradation, dependency pinning) need to land in the actual per-unit designs.
 - [ ] Infrastructure Design - **SKIP**
-  - **Rationale**: No infrastructure-as-code, cloud resources, or deployment-model change in this project — it remains a single Go binary/container. The Docker/README documentation update (requirements.md NFR-5.1) is handled as a normal deliverable of the relevant unit's Code Generation, not a distinct infrastructure-design stage.
+  - **Rationale**: No infrastructure-as-code, cloud resources, or deployment-model change in this project - it remains a single Go binary/container. The Docker/README documentation update (requirements.md NFR-5.1) is handled as a normal deliverable of the relevant unit's Code Generation, not a distinct infrastructure-design stage.
 - [ ] Code Generation - EXECUTE (ALWAYS)
   - **Rationale**: Implementation planning and code generation needed for every unit.
 - [ ] Build and Test - EXECUTE (ALWAYS)
@@ -163,22 +163,22 @@ OPERATIONS: placeholder
 
 Single Go module (not a multi-package monorepo), so this is a dependency-ordered build sequence within the module, not a cross-repo coordination plan:
 
-1. **`internal/store`** (new) — foundational, depends on nothing else new. Must land first since everything else in Phase 2 depends on it.
-2. **`internal/config`** — `StoreConfig` addition + `SearchConfig` cleanup. Can land alongside `internal/store` (low coupling) or immediately after.
-3. **`internal/opcua/subscription.go`** (new) — depends on `internal/store` (persisted intent) and the existing `internal/opcua/client.go` (gopcua's `Subscribe`/`Monitor`/`StateChangedCh`).
-4. **`internal/opcua/client.go` + `internal/opcua/discovery.go`** (modified) — read-through caching for values/typeinfo/browse, depends on `internal/store`.
-5. **`internal/mcp/server.go`** (modified) — 3 new tools + `opcua_read` integration, depends on `internal/opcua/subscription.go` and the caching changes in step 4.
-6. **`cmd/opcua-mcp.go`** (modified) — wires `store.Open`/`Close` into startup/shutdown, depends on everything above existing.
-7. **Integration tests + `Dockerfile`/`README.md`/`Makefile` updates** — depend on the feature being functionally complete; can start test-infrastructure setup (testcontainers plumbing) in parallel with step 1, but the actual test scenarios need steps 1-6 done.
+1. **`internal/store`** (new) - foundational, depends on nothing else new. Must land first since everything else in Phase 2 depends on it.
+2. **`internal/config`** - `StoreConfig` addition + `SearchConfig` cleanup. Can land alongside `internal/store` (low coupling) or immediately after.
+3. **`internal/opcua/subscription.go`** (new) - depends on `internal/store` (persisted intent) and the existing `internal/opcua/client.go` (gopcua's `Subscribe`/`Monitor`/`StateChangedCh`).
+4. **`internal/opcua/client.go` + `internal/opcua/discovery.go`** (modified) - read-through caching for values/typeinfo/browse, depends on `internal/store`.
+5. **`internal/mcp/server.go`** (modified) - 3 new tools + `opcua_read` integration, depends on `internal/opcua/subscription.go` and the caching changes in step 4.
+6. **`cmd/opcua-mcp.go`** (modified) - wires `store.Open`/`Close` into startup/shutdown, depends on everything above existing.
+7. **Integration tests + `Dockerfile`/`README.md`/`Makefile` updates** - depend on the feature being functionally complete; can start test-infrastructure setup (testcontainers plumbing) in parallel with step 1, but the actual test scenarios need steps 1-6 done.
 
 This sequence maps closely to (but doesn't rigidly fix) the ~3 units Units Generation is expected to produce: store, subscription manager, and MCP/read-through integration.
 
 ## Estimated Timeline
 - **Total Phases**: 2 remaining INCEPTION stages (Application Design, Units Generation) + ~3 CONSTRUCTION units × (Functional Design, NFR Requirements, NFR Design, Code Generation) + 1 Build and Test pass.
-- **Estimated Duration**: Not time-boxed in this workflow (AI-paced, not calendar-paced) — sized as "the largest unit of work this session has taken on," comparable in scope to the entire Phase 0+Phase 1 hardening pass combined (16 commits, 123 tests), given the new persistence layer and integration-test infrastructure.
+- **Estimated Duration**: Not time-boxed in this workflow (AI-paced, not calendar-paced) - sized as "the largest unit of work this session has taken on," comparable in scope to the entire Phase 0+Phase 1 hardening pass combined (16 commits, 123 tests), given the new persistence layer and integration-test infrastructure.
 
 ## Success Criteria
 - **Primary Goal**: Push-based OPC-UA subscriptions (persisted across restarts, reconnect-resilient) and a persistent read-through cache, without regressing any existing Phase 0/1 behavior.
 - **Key Deliverables**: `internal/store` package; `SubscriptionManager`; read-through caching on read/browse/type-info paths; 3 new MCP tools; updated config/Docker/README; unit tests (mocked) + integration tests (testcontainers + real OPC-UA test server) + property-based tests.
 - **Quality Gates**: `go build/vet/gofmt/test -race ./...` green after every unit; new integration tests pass against the real Microsoft OPC-UA test server; existing 123 tests continue passing unmodified in behavior (only additive changes where `opcua_read`'s shape isn't constrained per Q9).
-- **Integration Testing**: All components working together, verified against a real OPC-UA server via testcontainers — not just mocked unit tests.
+- **Integration Testing**: All components working together, verified against a real OPC-UA server via testcontainers - not just mocked unit tests.

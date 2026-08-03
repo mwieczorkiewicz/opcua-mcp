@@ -1,6 +1,6 @@
-# Component Methods — Phase 2
+# Component Methods - Phase 2
 
-Method signatures and high-level purpose only — business rules (e.g. exact
+Method signatures and high-level purpose only - business rules (e.g. exact
 TTL-expiry comparison logic, batching algorithm details) are defined in
 Functional Design, per-unit, during Construction.
 
@@ -10,7 +10,7 @@ Functional Design, per-unit, during Construction.
 func Open(path string, timeout time.Duration) (*Store, error)
 ```
 Opens (creating if absent) the bbolt file at `path`, with `timeout` passed
-as `bbolt.Options.Timeout` (non-zero — see requirements.md FR-1.2). Creates
+as `bbolt.Options.Timeout` (non-zero - see requirements.md FR-1.2). Creates
 all 4 buckets via `CreateBucketIfNotExists`.
 
 ```go
@@ -46,7 +46,7 @@ func (s *Store) DeleteSubscription(id string) error
 func (s *Store) ListSubscriptions() ([]SubscriptionIntent, error)
 ```
 
-All `Get*` methods return `(zeroValue, false, nil)` for a missing key — not
+All `Get*` methods return `(zeroValue, false, nil)` for a missing key - not
 an error, matching Go map-lookup idiom (`ok` pattern) rather than a typed
 "not found" error, since a cache miss is an expected, common outcome here
 (unlike e.g. `GetNodeInfo` elsewhere in this codebase, where "not found" is
@@ -110,7 +110,7 @@ type valueTypeBrowseStore interface {
 
 func NewCachingClient(client *Client, cache valueTypeBrowseStore, cfg *config.SearchConfig) *CachingClient
 ```
-`cfg.EnableCache` is the master toggle (requirements.md FR-3.7) — when
+`cfg.EnableCache` is the master toggle (requirements.md FR-3.7) - when
 false, every method below delegates straight to `client` with no cache
 interaction at all.
 
@@ -158,7 +158,7 @@ func (m *SubscriptionManager) Unsubscribe(ctx context.Context, subscriptionID st
 func (m *SubscriptionManager) ListSubscriptions() ([]SubscriptionInfo, error)
 ```
 `SubscriptionInfo` (exported, MCP-tool-facing) is distinct from
-`store.SubscriptionIntent` (persistence-facing) — the tool-facing shape can
+`store.SubscriptionIntent` (persistence-facing) - the tool-facing shape can
 include live/derived fields (e.g. current connection status) the persisted
 shape doesn't need.
 

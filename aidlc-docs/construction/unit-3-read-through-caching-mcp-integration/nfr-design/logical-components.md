@@ -1,4 +1,4 @@
-# Logical Components — Unit 3: Read-Through Caching & MCP Integration
+# Logical Components - Unit 3: Read-Through Caching & MCP Integration
 
 | Logical Component | Present? | Notes |
 |---|---|---|

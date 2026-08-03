@@ -1,4 +1,4 @@
-# Unit-to-Requirement Map — Phase 2
+# Unit-to-Requirement Map - Phase 2
 
 User Stories was skipped for this pass, so this maps `requirements.md`'s
 functional/non-functional requirements to units instead of stories to

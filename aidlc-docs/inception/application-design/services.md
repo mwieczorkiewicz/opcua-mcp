@@ -1,8 +1,8 @@
-# Services — Phase 2
+# Services - Phase 2
 
 This project has no separate "service layer" package distinct from its
 existing components (`internal/mcp.Server`, `internal/opcua.Client`,
-`internal/opcua.DiscoveryService` already play this role) — Phase 2 follows
+`internal/opcua.DiscoveryService` already play this role) - Phase 2 follows
 the same shape rather than introducing a new orchestration layer. The two
 new components (`CachingClient`, `SubscriptionManager`) plus
 `ReconnectWatcher` are each responsible for their own orchestration
@@ -17,11 +17,11 @@ internally; `cmd/opcua-mcp.go` and `mcp.Server` compose them, matching how
 3. store.Open(cfg.Store.DBPath, cfg.Store.OpenTimeout)   (new)
 4. opcua.NewClient(&cfg.OPCUA)                (existing)
 5. opcua.NewCachingClient(client, store, &cfg.Search)     (new)
-6. opcua.NewReconnectWatcher(client, ...)      (new — callback wired in step 8)
+6. opcua.NewReconnectWatcher(client, ...)      (new - callback wired in step 8)
 7. opcua.NewSubscriptionManager(client, store, watcher, &cfg.Store) (new)
 8. mcp.NewServer(cfg, cachingClient, subscriptionManager, discoveryService) (modified)
 9. Connect eagerly unless stdio                (existing, unchanged)
-10. subscriptionManager.Start(ctx) / watcher.Start(ctx)   (new — after connect)
+10. subscriptionManager.Start(ctx) / watcher.Start(ctx)   (new - after connect)
 11. mcpServer.Start()                          (existing, unchanged)
 ```
 
@@ -40,11 +40,11 @@ Ordering is the load-bearing requirement here (requirements.md NFR-1.3):
 3. Stop ReconnectWatcher                       (new)
 4. Shutdown HTTP server if running              (existing)
 5. Disconnect OPC-UA client                    (existing)
-6. store.Close()                               (new — strictly last)
+6. store.Close()                               (new - strictly last)
 ```
 
 `store.Close()` must never race with an in-flight batch write from
-`SubscriptionManager`'s pump goroutine — enforced by joining the pump
+`SubscriptionManager`'s pump goroutine - enforced by joining the pump
 goroutine in step 2 before reaching step 6.
 
 ## Request-time orchestration: `opcua_read` with `max_age_ms`
@@ -61,7 +61,7 @@ goroutine in step 2 before reaching step 6.
 4. mcp.Server formats the per-node results (value/status/timestamps/source/cached_at)
 ```
 
-`CachingClient` needs a way to know "is this node currently subscribed" —
+`CachingClient` needs a way to know "is this node currently subscribed" -
 either a direct reference to `SubscriptionManager` (a query method,
 e.g. `IsSubscribed(nodeID) bool`) or `SubscriptionManager` writing
 subscribed-node values with a marker `CachingClient` can read back
@@ -69,7 +69,7 @@ subscribed-node values with a marker `CachingClient` can read back
 "subscription" by the pump, avoiding a direct `CachingClient` →
 `SubscriptionManager` dependency). **Recommend the latter** (store the
 provenance in `ValueEntry` itself) to avoid a circular-ish dependency
-between the two new components — flagging this as a Functional Design
+between the two new components - flagging this as a Functional Design
 detail to confirm when that unit starts, not deciding it as a hard
 requirement here.
 

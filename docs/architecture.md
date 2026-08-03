@@ -50,7 +50,7 @@ internal/
 `internal/opcua/client.go` wraps `gopcua/opcua` behind a package-internal
 `opcuaClient` interface (`Connect`/`Close`/`Read`/`Write`/`Browse`/`BrowseNext`)
 so tests can inject a mock (`mock_client_test.go`) instead of hitting a real
-server. It has no cache and no subscription awareness — every call is live.
+server. It has no cache and no subscription awareness - every call is live.
 
 Notable behavior:
 - `Read` returns one result per requested node, each with its own status;
@@ -59,7 +59,7 @@ Notable behavior:
   context and a hard iteration cap), so nodes with >1000 references aren't
   silently truncated.
 - `Write` fetches `GetNodeTypeInfo` once, validates the value against it, and
-  returns an error — not just a log line — if validation fails.
+  returns an error - not just a log line - if validation fails.
 - Connection state (`client`, `connected`) is guarded by `sync.RWMutex`; every
   method reads it through a `snapshot()` helper rather than touching the
   fields directly, since the background discovery worker and MCP tool
@@ -78,17 +78,17 @@ wrapper; all cache-or-live decisions live here.
   afterward. Every result carries `Source` (`live`/`cache`/`subscription`)
   and `CachedAt`.
 - **Write**: delegates to `Client.Write`, then deletes the node's cached
-  value on success — unless it's currently subscribed, in which case the
+  value on success - unless it's currently subscribed, in which case the
   next subscription push will correct it naturally.
 - **Browse / GetNodeTypeInfo**: cached with their own TTLs
   (`STORE_BROWSE_TTL`, `STORE_TYPEINFO_TTL`).
-- `SEARCH_ENABLE_CACHE=false` bypasses all of the above — every call goes
+- `SEARCH_ENABLE_CACHE=false` bypasses all of the above - every call goes
   live, reproducing pre-cache behavior exactly.
 
 ## `SubscriptionManager`: push updates
 
 `internal/opcua/subscription.go` manages OPC-UA subscriptions (create,
-cancel, list) and persists *intent* — node IDs + interval, never
+cancel, list) and persists *intent* - node IDs + interval, never
 server-assigned ephemeral subscription IDs, which are meaningless after a
 reconnect.
 
@@ -102,7 +102,7 @@ reconnect.
   `STORE_BATCH_MAX_ITEMS`, whichever comes first.
 - `ReconnectWatcher` detects a permanently dead connection, reconnects, and
   calls back into the manager to discard in-memory subscription state (it
-  died with the old client) and restore everything from persisted intent —
+  died with the old client) and restore everything from persisted intent -
   the same path used on cold startup (`warmStart`), which completes before
   `Start` returns so `opcua_list_subscriptions` is always consistent with
   persisted state, even immediately after a restart.
@@ -110,21 +110,21 @@ reconnect.
 ## `Store`: bbolt persistence
 
 `internal/store/store.go` is a bbolt-backed key-value store with four
-buckets — `values`, `typeinfo`, `browse`, `subscriptions` — and no TTL logic
+buckets - `values`, `typeinfo`, `browse`, `subscriptions` - and no TTL logic
 of its own; it returns whatever was last written, verbatim, and leaves
 freshness decisions to callers (`CachingClient`, `SubscriptionManager`).
 Concurrency safety comes entirely from bbolt's single-writer/MVCC-reader
-transaction model — no additional locking layered on top.
+transaction model - no additional locking layered on top.
 
 Values are stored with a tagged encoding (`value_encoding.go`) that
-preserves the exact Go type across a JSON round-trip — plain
+preserves the exact Go type across a JSON round-trip - plain
 `encoding/json` unmarshaling into `interface{}` would collapse every number
 to `float64`, silently changing e.g. an `int32` value's dynamic type on
 read-back.
 
 If the store fails to open (stale lock from a prior ungraceful shutdown,
 read-only filesystem, ...), the server logs a warning and keeps running with
-caching forced off and the subscription tools returning an error — every
+caching forced off and the subscription tools returning an error - every
 other tool is unaffected.
 
 ## `DiscoveryService`: background crawl + search index
@@ -145,7 +145,7 @@ maintaining an in-memory node cache and a persistent on-disk
   shared by multiple parents (address spaces are graphs, not trees) from
   being re-browsed once per incoming reference.
 - **Concurrency**: `discoveryMu` serializes the ticker-driven walk against an
-  explicit `opcua_force_discovery` call — only one walk runs at a time. It's
+  explicit `opcua_force_discovery` call - only one walk runs at a time. It's
   held for the whole walk but never across a Bleve I/O call outside
   `updateSearchIndex`'s existing batch pattern.
 
@@ -153,7 +153,7 @@ maintaining an in-memory node cache and a persistent on-disk
 (`searchExact`/`searchWildcard`/`searchFuzzy`, `SearchNodes`,
 `SearchByDepth`, `SearchByNodeClass`) return zero hits for some queries that
 should match. `browse_name` is mapped with both a text and a keyword
-analyzer on the same field path in `NewDiscoveryService` — confirmed root
+analyzer on the same field path in `NewDiscoveryService` - confirmed root
 cause for that field. A couple of other query paths (numeric depth range,
 node_class exact term) also come back empty without a confirmed root cause
 yet. Don't rely on these search tiers for new behavior until this is
@@ -164,5 +164,5 @@ investigated.
 - `Client.client`/`Client.connected`: guard with `Client.mu`, always via
   `snapshot()`.
 - Never call `store`/Bleve methods while holding `DiscoveryService.cacheMutex`
-  or `SubscriptionManager.mu` — snapshot needed data under the lock, release,
+  or `SubscriptionManager.mu` - snapshot needed data under the lock, release,
   then do I/O.

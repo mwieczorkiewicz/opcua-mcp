@@ -1,4 +1,4 @@
-# Business Logic Model — Unit 1: Persistent Store
+# Business Logic Model - Unit 1: Persistent Store
 
 ## Core workflow: `Open`
 
@@ -114,7 +114,7 @@ decode(e encodedValue) (interface{}, error):
 
 ## Other buckets (`typeinfo`, `browse`, `subscriptions`)
 Same shape as `PutValue`/`GetValue` minus the encode/decode step (BR-2 only
-applies to `ValueEntry.Value` — every other struct's fields are already
+applies to `ValueEntry.Value` - every other struct's fields are already
 concrete, JSON-safe types): validate key non-empty (BR-3) → `json.Marshal`/
 `Unmarshal` directly → `db.Update`/`View`. `ListSubscriptions` additionally
 iterates the whole `subscriptions` bucket via `Bucket.ForEach`, unmarshaling
@@ -124,4 +124,4 @@ each entry.
 Every method operates on exactly one bucket, one key, one bbolt transaction.
 Nothing in Unit 1's scope requires multiple buckets to change atomically
 together (that concern, if it ever arises, belongs to whichever Unit 2/3
-business logic would need it — see `business-rules.md` BR-4's note).
+business logic would need it - see `business-rules.md` BR-4's note).

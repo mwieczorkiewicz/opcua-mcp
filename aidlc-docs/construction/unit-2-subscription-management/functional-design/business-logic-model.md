@@ -1,4 +1,4 @@
-# Business Logic Model — Unit 2: Subscription Management
+# Business Logic Model - Unit 2: Subscription Management
 
 ## Core workflow: `Subscribe`
 

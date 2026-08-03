@@ -1,4 +1,4 @@
-# Business Rules — Unit 2: Subscription Management
+# Business Rules - Unit 2: Subscription Management
 
 ## BR-1: Subscription IDs are UUIDs (Q1=A)
 Every logical subscription gets `uuid.NewString()` as its ID

@@ -14,7 +14,7 @@ A few things that help but aren't hard requirements:
   ```
 - Follow the commit message style in [`docs/COMMIT_CONVENTION.md`](docs/COMMIT_CONVENTION.md)
   if you can, but don't sweat it too much.
-- Describe what the PR does and why in the description — enough for a reviewer
+- Describe what the PR does and why in the description - enough for a reviewer
   to understand the change without digging through the whole diff.
 
-Questions or half-finished ideas are welcome too — open an issue or a draft PR.
+Questions or half-finished ideas are welcome too - open an issue or a draft PR.

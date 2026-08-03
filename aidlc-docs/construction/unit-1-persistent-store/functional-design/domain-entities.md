@@ -1,4 +1,4 @@
-# Domain Entities — Unit 1: Persistent Store
+# Domain Entities - Unit 1: Persistent Store
 
 ## `ValueEntry` (`values` bucket, keyed by node ID)
 ```go
@@ -50,9 +50,9 @@ type SubscriptionIntent struct {
 }
 ```
 
-## `encodedValue` (internal, not exported — the answer to Question 2)
+## `encodedValue` (internal, not exported - the answer to Question 2)
 `ValueEntry.Value` is `interface{}`, and `encoding/json`'s default
-`interface{}` unmarshaling collapses every number to `float64` — an `int32`
+`interface{}` unmarshaling collapses every number to `float64` - an `int32`
 value of `42` would read back as `float64(42)`, silently changing its
 dynamic type. Per Question 2 (answer B), exact type fidelity is preserved
 via a tagged wrapper, stored internally instead of the raw `interface{}`:

@@ -1,7 +1,7 @@
 # Baseline Security Rules
 
 ## Overview
-These security rules are MANDATORY cross-cutting constraints that apply across all AI-DLC phases. They are not optional guidance — they are hard constraints that stages MUST enforce when generating questions, producing design artifacts, generating code, and presenting completion messages.
+These security rules are MANDATORY cross-cutting constraints that apply across all AI-DLC phases. They are not optional guidance - they are hard constraints that stages MUST enforce when generating questions, producing design artifacts, generating code, and presenting completion messages.
 
 **Enforcement**: At each applicable stage, the model MUST verify compliance with these rules before presenting the stage completion message to the user.
 
@@ -12,10 +12,10 @@ A **blocking security finding** means:
 3. The model MUST present only the "Request Changes" option with a clear explanation of what needs to change
 4. The finding MUST be logged in `aidlc-docs/audit.md` with the SECURITY rule ID, description, and stage context
 
-If a SECURITY rule is not applicable to the current project (e.g., SECURITY-01 when no data stores exist), mark it as **N/A** in the compliance summary — this is not a blocking finding.
+If a SECURITY rule is not applicable to the current project (e.g., SECURITY-01 when no data stores exist), mark it as **N/A** in the compliance summary - this is not a blocking finding.
 
 ### Default Enforcement
-All rules in this document are **blocking** by default. If any rule's verification criteria are not met, it is a blocking security finding — follow the blocking finding behavior defined above.
+All rules in this document are **blocking** by default. If any rule's verification criteria are not met, it is a blocking security finding - follow the blocking finding behavior defined above.
 
 ### Verification Criteria Format
 Verification items in this document are plain bullet points describing compliance checks. They are distinct from the `- [ ]` / `- [x]` progress-tracking checkboxes used in stage plan files. Each item should be evaluated as compliant or non-compliant during review.
@@ -107,8 +107,8 @@ Verification items in this document are plain bullet points describing complianc
 ## Rule SECURITY-06: Least-Privilege Access Policies
 
 **Rule**: Every identity and access management policy, role, or permission boundary MUST follow least privilege:
-- Use specific resource identifiers — NEVER use wildcard resources unless the API does not support resource-level permissions (document the exception)
-- Use specific actions — NEVER use wildcard actions
+- Use specific resource identifiers - NEVER use wildcard resources unless the API does not support resource-level permissions (document the exception)
+- Use specific actions - NEVER use wildcard actions
 - Scope conditions where possible
 - Separate read and write permissions into distinct policy statements
 
@@ -142,8 +142,8 @@ Verification items in this document are plain bullet points describing complianc
 **Rule**: Every application endpoint that accesses or mutates a resource MUST enforce authorization checks at the application layer:
 - **Deny by default**: All routes/endpoints MUST require authentication unless explicitly marked as public
 - **Object-level authorization**: Every request that references a resource by ID MUST verify the requesting user/principal owns or has permission to access that resource (prevent IDOR)
-- **Function-level authorization**: Administrative or privileged operations MUST check the caller's role/permissions server-side — never rely on client-side hiding
-- **CORS policy**: Cross-origin resource sharing MUST be restricted to explicitly allowed origins — never use `Access-Control-Allow-Origin: *` on authenticated endpoints
+- **Function-level authorization**: Administrative or privileged operations MUST check the caller's role/permissions server-side - never rely on client-side hiding
+- **CORS policy**: Cross-origin resource sharing MUST be restricted to explicitly allowed origins - never use `Access-Control-Allow-Origin: *` on authenticated endpoints
 - **Token validation**: JWTs or session tokens MUST be validated server-side on every request (signature, expiration, audience, issuer)
 
 **Verification**:
@@ -181,9 +181,9 @@ Verification items in this document are plain bullet points describing complianc
 - **Dependency pinning**: All dependencies MUST use exact versions or lock files
 - **Vulnerability scanning**: A dependency vulnerability scanner MUST be configured 
 - **No unused dependencies**: Remove packages that are not actively used
-- **Trusted sources only**: Dependencies MUST be pulled from official registries or verified private registries — no unvetted third-party sources
+- **Trusted sources only**: Dependencies MUST be pulled from official registries or verified private registries - no unvetted third-party sources
 - **SBOM**: Projects MUST generate a Software Bill of Materials for production deployments
-- **CI/CD integrity**: Build pipelines MUST use pinned tool versions and verified base images — no `latest` tags in production Dockerfiles or CI configurations
+- **CI/CD integrity**: Build pipelines MUST use pinned tool versions and verified base images - no `latest` tags in production Dockerfiles or CI configurations
 
 **Verification**:
 - A lock file exists and is committed to version control
@@ -197,10 +197,10 @@ Verification items in this document are plain bullet points describing complianc
 ## Rule SECURITY-11: Secure Design Principles
 
 **Rule**: Application design MUST incorporate security from the start:
-- **Separation of concerns**: Security-critical logic (authentication, authorization, payment processing) MUST be isolated in dedicated modules — not scattered across the codebase
-- **Defense in depth**: No single control should be the sole line of defense — layer controls (validation + authorization + encryption)
+- **Separation of concerns**: Security-critical logic (authentication, authorization, payment processing) MUST be isolated in dedicated modules - not scattered across the codebase
+- **Defense in depth**: No single control should be the sole line of defense - layer controls (validation + authorization + encryption)
 - **Rate limiting**: Public-facing endpoints MUST implement rate limiting or throttling to prevent abuse
-- **Business logic abuse**: Design MUST consider misuse cases — not just happy-path scenarios
+- **Business logic abuse**: Design MUST consider misuse cases - not just happy-path scenarios
 
 **Verification**:
 - Security-critical logic is encapsulated in dedicated modules or services
@@ -213,11 +213,11 @@ Verification items in this document are plain bullet points describing complianc
 
 **Rule**: Every application with user authentication MUST implement:
 - **Password policy**: Minimum 8 characters, check against breached password lists
-- **Credential storage**: Passwords MUST be hashed using adaptive algorithms — never weak or non-adaptive hashing
+- **Credential storage**: Passwords MUST be hashed using adaptive algorithms - never weak or non-adaptive hashing
 - **Multi-factor authentication**: MFA MUST be supported for administrative accounts and SHOULD be available for all users
 - **Session management**: Sessions MUST have server-side expiration, be invalidated on logout, and use secure/httpOnly/sameSite cookie attributes
 - **Brute-force protection**: Login endpoints MUST implement account lockout, progressive delays, or CAPTCHA after repeated failures
-- **No hardcoded credentials**: No passwords, API keys, or secrets in source code or IaC templates — use a secrets manager
+- **No hardcoded credentials**: No passwords, API keys, or secrets in source code or IaC templates - use a secrets manager
 
 **Verification**:
 - Password hashing uses adaptive algorithms (not weak or non-adaptive hashing)
@@ -232,9 +232,9 @@ Verification items in this document are plain bullet points describing complianc
 ## Rule SECURITY-13: Software and Data Integrity Verification
 
 **Rule**: Systems MUST verify the integrity of software and data:
-- **Deserialization safety**: Untrusted data MUST NOT be deserialized without validation — use safe deserialization libraries or allowlists of permitted types
+- **Deserialization safety**: Untrusted data MUST NOT be deserialized without validation - use safe deserialization libraries or allowlists of permitted types
 - **Artifact integrity**: Downloaded dependencies, plugins, and updates MUST be verified via checksums or digital signatures
-- **CI/CD pipeline security**: Build pipelines MUST restrict who can modify pipeline definitions — separate duties between code authors and deployment approvers
+- **CI/CD pipeline security**: Build pipelines MUST restrict who can modify pipeline definitions - separate duties between code authors and deployment approvers
 - **CDN and external resources**: Scripts or resources loaded from external CDNs MUST use Subresource Integrity (SRI) hashes
 - **Data integrity**: Critical data modifications MUST be auditable (who changed what, when)
 
@@ -250,7 +250,7 @@ Verification items in this document are plain bullet points describing complianc
 
 **Rule**: In addition to logging (SECURITY-02, SECURITY-03), systems MUST include:
 - **Security event alerting**: Alerts MUST be configured for high-value security events: repeated authentication failures, privilege escalation attempts, access from unusual locations, and authorization failures
-- **Log integrity**: Logs MUST be stored in append-only or tamper-evident storage — application code MUST NOT be able to delete or modify its own audit logs
+- **Log integrity**: Logs MUST be stored in append-only or tamper-evident storage - application code MUST NOT be able to delete or modify its own audit logs
 - **Log retention**: Logs MUST be retained for a minimum period appropriate to the application's compliance requirements (default: 90 days minimum)
 - **Monitoring dashboards**: A monitoring dashboard or alarm configuration MUST be defined for key operational and security metrics
 
@@ -265,10 +265,10 @@ Verification items in this document are plain bullet points describing complianc
 ## Rule SECURITY-15: Exception Handling and Fail-Safe Defaults
 
 **Rule**: Every application MUST handle exceptional conditions safely:
-- **Catch and handle**: All external calls (database, API, file I/O) MUST have explicit error handling — no unhandled promise rejections or uncaught exceptions in production
-- **Fail closed**: On error, the system MUST deny access or halt the operation — never fail open
-- **Resource cleanup**: Error paths MUST release resources (connections, file handles, locks) — use try/finally, using statements, or equivalent patterns
-- **User-facing errors**: Error messages shown to users MUST be generic — no internal details or system information
+- **Catch and handle**: All external calls (database, API, file I/O) MUST have explicit error handling - no unhandled promise rejections or uncaught exceptions in production
+- **Fail closed**: On error, the system MUST deny access or halt the operation - never fail open
+- **Resource cleanup**: Error paths MUST release resources (connections, file handles, locks) - use try/finally, using statements, or equivalent patterns
+- **User-facing errors**: Error messages shown to users MUST be generic - no internal details or system information
 - **Global error handler**: Applications MUST have a global/top-level error handler that catches unhandled exceptions, logs them (per SECURITY-03), and returns a safe response
 
 **Verification**:
@@ -285,7 +285,7 @@ Verification items in this document are plain bullet points describing complianc
 These rules are cross-cutting constraints that apply to every AI-DLC stage. At each stage:
 - Evaluate all SECURITY rule verification criteria against the artifacts produced
 - Include a "Security Compliance" section in the stage completion summary listing each rule as compliant, non-compliant, or N/A
-- If any rule is non-compliant, this is a blocking security finding — follow the blocking finding behavior defined in the Overview
+- If any rule is non-compliant, this is a blocking security finding - follow the blocking finding behavior defined in the Overview
 - Include security rule references in design documentation and test instructions
 
 ---

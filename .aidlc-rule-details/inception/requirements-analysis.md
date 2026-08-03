@@ -124,7 +124,7 @@ DO NOT proceed to Step 7 until all questions in requirement-verification-questio
 Present the question file to the user and STOP.
 
 ### Step 7: Generate Requirements Document
-   - **PREREQUISITE**: Step 6 gate must be passed — all answers received and analyzed
+   - **PREREQUISITE**: Step 6 gate must be passed - all answers received and analyzed
    - Create `aidlc-docs/inception/requirements/requirements.md`
    - Include intent analysis summary at the top:
      - User request

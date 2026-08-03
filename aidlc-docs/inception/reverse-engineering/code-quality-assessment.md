@@ -2,11 +2,11 @@
 
 ## Test Coverage
 - **Overall**: 123 tests across 5 packages, all passing under `go test -race ./...`.
-- **By package**: `internal/config` 96.3%, `internal/opcua` 43.8%, `internal/mcp` 31.4%, `internal/logger` 7.9%, `cmd` 0% (no test files — thin entrypoint, acceptable).
-- **Unit Tests**: Good — table-driven throughout; concurrency-sensitive code
+- **By package**: `internal/config` 96.3%, `internal/opcua` 43.8%, `internal/mcp` 31.4%, `internal/logger` 7.9%, `cmd` 0% (no test files - thin entrypoint, acceptable).
+- **Unit Tests**: Good - table-driven throughout; concurrency-sensitive code
   (`opcua.Client`'s connection state, `DiscoveryService`'s cache) has
   dedicated `-race` coverage.
-- **Integration Tests**: None against a live/simulated OPC-UA server — all
+- **Integration Tests**: None against a live/simulated OPC-UA server - all
   OPC-UA interaction is mocked via the `opcuaClient` interface seam
   (`internal/opcua/mock_client_test.go`). This is a deliberate, documented
   tradeoff (fast, hermetic tests) rather than an oversight, but it means
@@ -17,12 +17,12 @@
 - **Linting**: `golangci-lint`/`staticcheck`/`gosec`/`govulncheck` are wired
   into the `Makefile` but not reliably available in every dev environment,
   and the Makefile's `lint`/`security-scan`/`vuln-check` targets silently
-  no-op if the tool isn't installed rather than failing — fine for local dev,
+  no-op if the tool isn't installed rather than failing - fine for local dev,
   wrong for CI if this repo ever gets a CI pipeline (none currently exists in
-  `.github/` beyond whatever's already there — not inventoried further here
+  `.github/` beyond whatever's already there - not inventoried further here
   since it's out of this analysis's scope). `go vet`/`gofmt` are always run
   and are clean.
-- **Code Style**: Consistent — table-driven tests, `fmt.Errorf("...: %w", err)`
+- **Code Style**: Consistent - table-driven tests, `fmt.Errorf("...: %w", err)`
   wrapping throughout, all logging through `internal/logger` (no stray
   `fmt.Print*`/`log.Print*`).
 - **Documentation**: Good at the package/exported-symbol level; `README.md`
@@ -41,18 +41,18 @@
   model-facing MCP tools with no opt-in flag.
 - **Dead config fields**: `SearchConfig.CacheTTL`/`MaxCacheSize`
   (`SEARCH_CACHE_TTL`/`SEARCH_MAX_CACHE_SIZE`) are parsed but never read
-  anywhere else in the codebase (`internal/config/config.go:98-99`) — no
+  anywhere else in the codebase (`internal/config/config.go:98-99`) - no
   TTL/eviction logic exists on `nodeCache`, which is an unbounded map.
   `SearchConfig.EnableCache` (`SEARCH_ENABLE_CACHE`) has exactly one usage,
   purely cosmetic (reported in `GetCacheStats()`), gating no actual behavior
   today. **Directly relevant to Phase 2**: the plan is to repurpose
   `EnableCache` as the real master toggle for the new read-through cache,
-  and `CacheTTL` may become genuinely load-bearing then — worth resolving
+  and `CacheTTL` may become genuinely load-bearing then - worth resolving
   as part of that work, not before.
 - **Documentation/implementation mismatch**: `OPCUAConfig.ServerCert`
   (`OPCUA_SERVER_CERT`, `internal/config/config.go:51`) is documented in
   `README.md` as if it enables server-certificate pinning/verification, but
-  it's never read anywhere in `internal/opcua/client.go` — a latent
+  it's never read anywhere in `internal/opcua/client.go` - a latent
   security-documentation risk (an operator setting it believes they have
   server-cert verification and don't).
 - **Docker hardening gaps**: no non-root `USER` directive, no `HEALTHCHECK`,
@@ -79,5 +79,5 @@
   the MCP wire protocol.
 - **Anti-patterns**: none rising to the severity of the items already listed
   as critical/high in prior audits (all of those have been fixed this
-  session) — remaining issues are the technical-debt items above, all
+  session) - remaining issues are the technical-debt items above, all
   medium/low severity and already understood.

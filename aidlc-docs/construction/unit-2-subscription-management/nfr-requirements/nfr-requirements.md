@@ -1,4 +1,4 @@
-# NFR Requirements — Unit 2: Subscription Management
+# NFR Requirements - Unit 2: Subscription Management
 
 ## Reliability
 - **Reconnect rebuild retry** (Q1=A): `ReconnectWatcher`'s `onPermanentDeath`
@@ -16,13 +16,13 @@
   decisions already locked in.
 
 ## Scalability
-Carried over from Unit 1 (Q3=B, thousands of nodes/subscriptions) —
+Carried over from Unit 1 (Q3=B, thousands of nodes/subscriptions) -
 `intervalGroups` has at most one entry per distinct `intervalMs` value
 actually in use, which will be far smaller than the node/subscription
 count itself at this scale.
 
 ## Performance
-No specific throughput target for the notification pump (Q3=A) — the
+No specific throughput target for the notification pump (Q3=A) - the
 existing `STORE_BATCH_WINDOW`/`STORE_BATCH_MAX_ITEMS` defaults (25ms/250,
 set in Unit 1) are the starting point; revisit only if real usage surfaces
 a concrete bottleneck.
@@ -32,7 +32,7 @@ N/A, carried over from the project-level resiliency-extension answers
 (experimental/lab tool, no formal uptime targets).
 
 ## Security
-No new secrets/credentials — subscriptions reuse the OPC-UA connection's
+No new secrets/credentials - subscriptions reuse the OPC-UA connection's
 existing authentication. `SECURITY-15` (error handling on external calls)
 is satisfied by BR-6 (pump) and BR-1 through BR-4's explicit error paths in
 `Subscribe`/`Unsubscribe`.
@@ -40,7 +40,7 @@ is satisfied by BR-6 (pump) and BR-1 through BR-4's explicit error paths in
 ## Tech Stack Selection
 No new dependencies. `google/uuid` (Functional Design Q1) is an existing
 indirect dependency promoted to direct use, same treatment as `bbolt` in
-Unit 1 — not a new-dependency decision requiring separate sign-off.
+Unit 1 - not a new-dependency decision requiring separate sign-off.
 
 ## Testability
 - **Stateful PBT** (Q2=A, resolves requirements.md NFR-3.3): a simplified
@@ -56,7 +56,7 @@ Unit 1 — not a new-dependency decision requiring separate sign-off.
   sequences + invariant checks after each command, not just at the end).
 - Example-based tests still cover the specific scenarios PBT's shrinking
   might miss the intent of (e.g. the exact partial-failure response shape
-  from BR-4, the exact reconnect-rebuild sequence from BR-5) — PBT
+  from BR-4, the exact reconnect-rebuild sequence from BR-5) - PBT
   complements, doesn't replace, per PBT-10.
 
 ## Maintainability

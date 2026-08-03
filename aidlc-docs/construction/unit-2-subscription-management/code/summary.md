@@ -1,13 +1,13 @@
-# Code Generation Summary — Unit 2: Subscription Management
+# Code Generation Summary - Unit 2: Subscription Management
 
 ## Files created (application code)
-- `internal/opcua/reconnect_watcher.go` — `ReconnectWatcher`: watches
+- `internal/opcua/reconnect_watcher.go` - `ReconnectWatcher`: watches
   `opcua.ConnState` transitions via a `subscribingClient`'s
   `SetStateChangeChannel`, fires `onPermanentDeath` exactly once per
   `Connected → Closed` transition (BR-8), ignores transient states
   (`Connecting`/`Reconnecting`/`Disconnected`) and a `Closed` with no prior
   `Connected` (initial-connect failure).
-- `internal/opcua/subscription.go` — the unit's core: `subscribingClient`/
+- `internal/opcua/subscription.go` - the unit's core: `subscribingClient`/
   `subscriptionHandle`/`subscriptionStore` seam interfaces plus compile-time
   assertions; `NodeStatus`/`SubscriptionInfo`/`subscriptionRecord`/
   `intervalGroup` domain types; `SubscriptionManager` with `Start`/`Stop`,
@@ -20,16 +20,16 @@
   `ListSubscriptions`, and the `pump` goroutine (batches notifications by a
   ticker + size threshold, BR-6 log-and-continue on store write failure,
   routes incoming `*ua.DataChangeNotification`s by `ClientHandle`).
-- `internal/opcua/mock_subscription_test.go` — `mockSubscribingClient`
+- `internal/opcua/mock_subscription_test.go` - `mockSubscribingClient`
   (implements `subscribingClient`) and `mockSubscriptionHandle` (implements
   `subscriptionHandle`, accepts every `Monitor` item by default with
   sequential `MonitoredItemID`s), following `mock_client_test.go`'s existing
   injectable-func-plus-call-counter style.
-- `internal/opcua/reconnect_watcher_test.go` — 4 example-based tests:
+- `internal/opcua/reconnect_watcher_test.go` - 4 example-based tests:
   fires once on permanent death, ignores transient states, ignores `Closed`
   without a prior `Connected` (BR-8), resets and fires again after a second
   independent connected lifetime.
-- `internal/opcua/subscription_test.go` — 9 example-based tests: subscribe
+- `internal/opcua/subscription_test.go` - 9 example-based tests: subscribe
   success, partial failure (BR-4), all-rejected (tears down the empty
   group), interval sharing (asserts the underlying gopcua `Subscribe` is
   called once per distinct interval, not once per logical subscription),
@@ -37,7 +37,7 @@
   an unknown ID, warm-start restores persisted intent before `Start`
   returns, the pump batches notifications into the store, and a store write
   failure during the pump logs and continues rather than crashing (BR-6).
-- `internal/opcua/subscription_pbt_test.go` — `TestSubscriptionManagerStatefulProperties`:
+- `internal/opcua/subscription_pbt_test.go` - `TestSubscriptionManagerStatefulProperties`:
   a `pgregory.net/rapid` stateful test driving random Subscribe/Unsubscribe
   command sequences against a real `SubscriptionManager`, asserting after
   every command that `ListSubscriptions()` matches a simplified reference
@@ -45,7 +45,7 @@
   subscriptions at that interval (NFR Requirements Q2, PBT-06).
 
 ## Files modified (application code)
-- `internal/opcua/client.go` — added `Subscribe` to the `opcuaClient`
+- `internal/opcua/client.go` - added `Subscribe` to the `opcuaClient`
   interface (exact signature match to `*opcua.Client`'s real method, so the
   existing `var _ opcuaClient = (*opcua.Client)(nil)` assertion needed no
   change); added a `stateCh chan<- opcua.ConnState` field guarded by the
@@ -56,13 +56,13 @@
   a wrapper that snapshots connection state, delegates to the low-level
   `opcuaClient.Subscribe`, and upcasts the concrete `*opcua.Subscription`
   result to `subscriptionHandle`.
-- `internal/opcua/mock_client_test.go` — added `subscribeFunc`/
+- `internal/opcua/mock_client_test.go` - added `subscribeFunc`/
   `subscribeCalls` and a `Subscribe` method to `mockOpcuaClient` so it keeps
   satisfying the extended `opcuaClient` interface.
 
 ## Test results
-- `go build ./... && go vet ./... && gofmt -l .` — clean.
-- `go test -race ./...` — all packages green; `internal/opcua` alone: 93
+- `go build ./... && go vet ./... && gofmt -l .` - clean.
+- `go test -race ./...` - all packages green; `internal/opcua` alone: 93
   tests passing (up from the pre-Unit-2 baseline).
 - `go test -race ./...` total runtime: ~28-31s, dominated by
   `TestSubscriptionManagerStatefulProperties` (~20s for 100 rapid trials,

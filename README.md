@@ -1,7 +1,7 @@
 # OPC-UA MCP Server
 
 An MCP server that lets an LLM read, write, browse, search, and subscribe to
-live data on an OPC-UA industrial automation server — over stdio or HTTP,
+live data on an OPC-UA industrial automation server - over stdio or HTTP,
 with a persistent cache and a searchable index of the address space built in.
 
 https://github.com/user-attachments/assets/0b676e6e-17ce-42f5-918f-9a615e939008
@@ -20,7 +20,7 @@ make connector-url      # prints a URL like https://xyz.trycloudflare.com/mcp
 
 Paste that URL into Claude at **Settings → Connectors → Add custom
 connector**, then ask it to browse the server or read a value. Stop with
-`make compose-down` when you're done — see
+`make compose-down` when you're done - see
 [docs/deployment.md](docs/deployment.md) for what that tunnel exposes and
 how to run against your own OPC-UA server instead.
 
@@ -45,7 +45,7 @@ deployment.
   mismatched value is rejected before it reaches the device.
 - **Browse** the address space one level at a time or recursively, and look
   nodes up by name instead of by node ID.
-- **Subscribe** to push-based live updates — subscriptions persist across
+- **Subscribe** to push-based live updates - subscriptions persist across
   restarts and are automatically re-established on reconnect.
 - **Cache** reads, browse results, and type info on disk (bbolt), so repeat
   lookups don't round-trip to the device; writes invalidate the relevant
@@ -64,7 +64,7 @@ subscription manager, and discovery index fit together.
 |---|---|
 | `opcua_read` | Read one or more node values. Subscribed nodes are served from the live cache; others go live unless `max_age_ms` allows a cached value. |
 | `opcua_write` | Write a value to a node. Validates the value's type against the node before writing. |
-| `opcua_get_value` | Read a single node's value — a convenience wrapper over `opcua_read`. |
+| `opcua_get_value` | Read a single node's value - a convenience wrapper over `opcua_read`. |
 | `opcua_get_value_by_name` | Read a value by browse name instead of node ID, via the discovery index. |
 | `opcua_browse` | List a node's immediate children. |
 | `opcua_browse_nodes` | Recursively browse from a node up to a depth limit, nesting children under their parent. |
@@ -92,11 +92,11 @@ Configuration is loaded (via [viper](https://github.com/spf13/viper)) from
 three sources, in ascending order of precedence:
 
 1. Built-in defaults (shown in the tables below).
-2. An optional config file — TOML, YAML, JSON, or any other format viper
+2. An optional config file - TOML, YAML, JSON, or any other format viper
    supports. By default `./config.{yaml,yml,toml,json,...}` is read if
    present; point at an explicit path with `CONFIG_FILE=/path/to/config.toml`.
-   A config file is entirely optional — env vars alone are still enough.
-3. Environment variables (`SERVER_*`, `OPCUA_*`, `MCP_*`, `SEARCH_*`, `STORE_*`) — **always win** over the config file, so existing env-var-only deployments keep working unchanged.
+   A config file is entirely optional - env vars alone are still enough.
+3. Environment variables (`SERVER_*`, `OPCUA_*`, `MCP_*`, `SEARCH_*`, `STORE_*`) - **always win** over the config file, so existing env-var-only deployments keep working unchanged.
 
 A config file mirrors the env var names, lowercased and nested under each
 prefix, e.g. `SERVER_HTTP_PORT` becomes:
@@ -177,7 +177,7 @@ bbolt database.
 
 If the store fails to open (e.g. a stale lock from a prior ungraceful
 shutdown, or a read-only filesystem), the server logs a warning and keeps
-running with caching forced off and subscription tools returning an error —
+running with caching forced off and subscription tools returning an error -
 every other tool is unaffected.
 
 ## Docker
@@ -187,7 +187,7 @@ docker build -t opcua-mcp .
 docker run -p 8080:8080 -e SERVER_TRANSPORT=http -e OPCUA_ENDPOINT=opc.tcp://your-server:4840 opcua-mcp
 ```
 
-Multi-stage build on Chainguard's minimal Go image, running from `scratch` —
+Multi-stage build on Chainguard's minimal Go image, running from `scratch` -
 no shell, small attack surface. Mount `./search_index` and
 `./mcp_opcua_store.db` as volumes to persist discovery/cache/subscription
 state across restarts. Full auth-mode examples, the Compose dev stack, and
@@ -205,21 +205,21 @@ go test -race ./...
 make test-integration        # real Subscribe/reconnect/cache behavior via testcontainers-go (needs Docker)
 ```
 
-VS Code launch configs are in `.vscode/launch.example.json` — copy to
+VS Code launch configs are in `.vscode/launch.example.json` - copy to
 `.vscode/launch.json` to get stdio/HTTP/auth debug targets that start and
 stop the test server automatically. `make help` lists every available
 target.
 
 Tests are table-driven and mock the OPC-UA client at the `opcuaClient`
 interface seam (`internal/opcua/mock_client_test.go`) rather than against a
-live/simulated server — see [docs/architecture.md](docs/architecture.md) for
+live/simulated server - see [docs/architecture.md](docs/architecture.md) for
 how the pieces being tested fit together, and
 [docs/COMMIT_CONVENTION.md](docs/COMMIT_CONVENTION.md) for this repo's
 commit message format.
 
 ## Contributing
 
-Fork it, make your changes, open a PR — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Fork it, make your changes, open a PR - see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

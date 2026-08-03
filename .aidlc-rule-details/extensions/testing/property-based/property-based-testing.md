@@ -16,11 +16,11 @@ A **blocking PBT finding** means:
 3. The model MUST present only the "Request Changes" option with a clear explanation of what needs to change
 4. The finding MUST be logged in `aidlc-docs/audit.md` with the PBT rule ID, description, and stage context
 
-If a PBT rule is not applicable to the current project or unit (e.g., PBT-06 when no stateful components exist), mark it as **N/A** in the compliance summary — this is not a blocking finding.
+If a PBT rule is not applicable to the current project or unit (e.g., PBT-06 when no stateful components exist), mark it as **N/A** in the compliance summary - this is not a blocking finding.
 
 ### Default Enforcement
 
-All rules in this document are **blocking** by default. If any rule's verification criteria are not met, it is a blocking PBT finding — follow the blocking finding behavior defined above.
+All rules in this document are **blocking** by default. If any rule's verification criteria are not met, it is a blocking PBT finding - follow the blocking finding behavior defined above.
 
 ### Partial Enforcement Mode
 
@@ -91,7 +91,7 @@ The property-based test MUST generate random valid inputs using a domain-appropr
 - Each documented invariant has a corresponding property-based test
 - Invariant tests generate a wide range of inputs including boundary values
 - Business rule invariants identified in functional design are covered by PBT
-- Invariant tests do not duplicate exact assertions from example-based tests — they test the general rule, not specific cases
+- Invariant tests do not duplicate exact assertions from example-based tests - they test the general rule, not specific cases
 
 ---
 
@@ -159,7 +159,7 @@ Stateful PBT MUST:
 
 ## Rule PBT-07: Generator Quality
 
-**Rule**: Property-based tests MUST use domain-specific generators that produce realistic, structured inputs — not just primitive types. Poor generators (e.g., random strings for email fields, unbounded integers for age fields) produce meaningless test cases and miss real bugs.
+**Rule**: Property-based tests MUST use domain-specific generators that produce realistic, structured inputs - not just primitive types. Poor generators (e.g., random strings for email fields, unbounded integers for age fields) produce meaningless test cases and miss real bugs.
 
 Generator requirements:
 - **Domain types**: Custom generators MUST be created for domain objects (e.g., User, Order, Transaction) that respect business constraints (valid email format, positive amounts, valid date ranges)
@@ -235,7 +235,7 @@ The selected framework MUST be documented in the tech stack decisions and includ
 
 Requirements:
 - Critical business scenarios identified in user stories or requirements MUST have explicit example-based tests, even if a PBT covers the same property
-- PBT MUST NOT be the sole test for any business-critical path — at least one example-based test must pin the expected behavior for key scenarios
+- PBT MUST NOT be the sole test for any business-critical path - at least one example-based test must pin the expected behavior for key scenarios
 - When a PBT discovers a failing case, the shrunk minimal example SHOULD be added as a permanent example-based regression test
 - Test documentation MUST clearly distinguish between example-based and property-based tests (separate test files, test classes, or clearly named test functions)
 
@@ -262,7 +262,7 @@ These rules are cross-cutting constraints that apply to the following AI-DLC sta
 At each applicable stage:
 - Evaluate all PBT rule verification criteria against the artifacts produced
 - Include a "PBT Compliance" section in the stage completion summary listing each rule as compliant, non-compliant, or N/A
-- If any rule is non-compliant, this is a blocking PBT finding — follow the blocking finding behavior defined in the Overview
+- If any rule is non-compliant, this is a blocking PBT finding - follow the blocking finding behavior defined in the Overview
 - Include PBT rule references in design documentation and test instructions
 
 ---

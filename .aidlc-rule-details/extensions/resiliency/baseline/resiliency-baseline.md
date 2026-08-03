@@ -13,16 +13,16 @@ A **blocking resiliency finding** means:
 3. The model MUST present only the "Request Changes" option with a clear explanation of what needs to change
 4. The finding MUST be logged in `aidlc-docs/audit.md` with the RESILIENCY rule ID, description, and stage context
 
-If a RESILIENCY rule is not applicable to the current project (e.g., RESILIENCY-07 when no stateful data exists), mark it as **N/A** in the compliance summary — this is not a blocking finding.
+If a RESILIENCY rule is not applicable to the current project (e.g., RESILIENCY-07 when no stateful data exists), mark it as **N/A** in the compliance summary - this is not a blocking finding.
 
 ### Default Enforcement
-All rules in this document are **blocking** by default. If any rule's verification criteria are not met, it is a blocking resiliency finding — follow the blocking finding behavior defined above.
+All rules in this document are **blocking** by default. If any rule's verification criteria are not met, it is a blocking resiliency finding - follow the blocking finding behavior defined above.
 
 ### Verification Criteria Format
 Verification items in this document are plain bullet points describing compliance checks. They are distinct from the `- [ ]` / `- [x]` progress-tracking checkboxes used in stage plan files. Each item should be evaluated as compliant or non-compliant during review.
 
 ### User Decision Points (the model MUST ask, NOT decide)
-This extension follows the AI-DLC principle that architectural and process decisions belong to the user, not the LLM. The model MUST present the clarifying questions defined in the rules below and use the user's answers — it MUST NOT silently choose on the user's behalf. The decisions explicitly deferred to the user are:
+This extension follows the AI-DLC principle that architectural and process decisions belong to the user, not the LLM. The model MUST present the clarifying questions defined in the rules below and use the user's answers - it MUST NOT silently choose on the user's behalf. The decisions explicitly deferred to the user are:
 
 | Decision | Rule | Question presented |
 |---|---|---|
@@ -63,7 +63,7 @@ Where an organization already has a process (change management, CI/CD, incident 
 - **SLA definition**: A target availability percentage MUST be defined (e.g., 99.9%, 99.99%)
 - **RTO (Recovery Time Objective)**: The maximum acceptable downtime MUST be defined for each critical workload
 - **RPO (Recovery Point Objective)**: The maximum acceptable data loss window MUST be defined for each workload with persistent state
-- **Alignment**: Availability targets MUST be validated against business requirements — over-engineering and under-engineering are both findings
+- **Alignment**: Availability targets MUST be validated against business requirements - over-engineering and under-engineering are both findings
 
 **Verification**:
 - Each critical workload has a documented SLA target
@@ -79,15 +79,15 @@ Before finalizing the Requirements phase, the model MUST ask the user the follow
 ## Question: RTO/RPO Goals and Disaster Recovery Strategy
 What are your Recovery Time Objective (RTO) and Recovery Point Objective (RPO) goals? These determine the appropriate Disaster Recovery strategy and infrastructure redundancy level.
 
-A) RPO/RTO: Hours — Backup & Restore strategy. Lowest cost ($). Data backed up, no services deployed. Redeploy from IaC and restore from backups on failure. Suitable for non-critical workloads.
+A) RPO/RTO: Hours - Backup & Restore strategy. Lowest cost ($). Data backed up, no services deployed. Redeploy from IaC and restore from backups on failure. Suitable for non-critical workloads.
 
-B) RPO/RTO: 10s of minutes — Pilot Light strategy. Cost: $$. Data live, services idle. Infrastructure deployed but not running, scaled up on failover. Suitable for important workloads.
+B) RPO/RTO: 10s of minutes - Pilot Light strategy. Cost: $$. Data live, services idle. Infrastructure deployed but not running, scaled up on failover. Suitable for important workloads.
 
-C) RPO/RTO: Minutes — Warm Standby strategy. Cost: $$$. Data live, services run at reduced capacity. Scaled up during failover. Suitable for business-critical applications.
+C) RPO/RTO: Minutes - Warm Standby strategy. Cost: $$$. Data live, services run at reduced capacity. Scaled up during failover. Suitable for business-critical applications.
 
-D) RPO/RTO: Near real-time — Multi-site Active/Active strategy. Highest cost ($$$$). Data live, live services in multiple regions simultaneously. Suitable for mission-critical, zero-downtime requirements.
+D) RPO/RTO: Near real-time - Multi-site Active/Active strategy. Highest cost ($$$$). Data live, live services in multiple regions simultaneously. Suitable for mission-critical, zero-downtime requirements.
 
-E) N/A — Single-region deployment is acceptable, no cross-region DR needed. Rely on multi-zone availability within one region.
+E) N/A - Single-region deployment is acceptable, no cross-region DR needed. Rely on multi-zone availability within one region.
 
 X) Other (please describe after [Answer]: tag below)
 
@@ -104,7 +104,7 @@ The user's selected RTO/RPO targets MUST be documented in the requirements outpu
 
 ## Rule RESILIENCY-03: Change Management Process
 
-**Rule**: Every project MUST integrate with a change management process that minimizes the risk of change-induced failures. The default expectation is that the organization already HAS a change management process — this rule directs the project to identify and conform to it, not to invent a new one.
+**Rule**: Every project MUST integrate with a change management process that minimizes the risk of change-induced failures. The default expectation is that the organization already HAS a change management process - this rule directs the project to identify and conform to it, not to invent a new one.
 
 **Clarifying Question (ask during Requirements; do not assume an answer)**:
 
@@ -112,11 +112,11 @@ The user's selected RTO/RPO targets MUST be documented in the requirements outpu
 ## Question: Change Management Process
 How should production changes for this workload be governed? AI-DLC will conform the design to your answer rather than inventing a process.
 
-A) Use our existing organizational change management process — provide the name/tool (e.g., ServiceNow, Jira Change, internal CAB). AI-DLC will reference it and ensure deployable artifacts fit that process (change records, approval gates).
+A) Use our existing organizational change management process - provide the name/tool (e.g., ServiceNow, Jira Change, internal CAB). AI-DLC will reference it and ensure deployable artifacts fit that process (change records, approval gates).
 
-B) No formal process exists yet — AI-DLC should propose a lightweight change management process (change record + approval + rollback note) for the team to adopt.
+B) No formal process exists yet - AI-DLC should propose a lightweight change management process (change record + approval + rollback note) for the team to adopt.
 
-C) N/A — this workload is exempt from formal change management (e.g., internal tooling). Document the exemption rationale.
+C) N/A - this workload is exempt from formal change management (e.g., internal tooling). Document the exemption rationale.
 
 X) Other (describe after [Answer]: tag below)
 
@@ -128,16 +128,16 @@ X) Other (describe after [Answer]: tag below)
 - Production changes reference the identified process for approval and change records
 - Change history mechanism is identified (existing tool or proposed)
 
-**Note**: If the user selects A, the model MUST NOT redefine the process — only reference it and ensure artifacts (e.g., deployment configs, runbooks) are compatible with it.
+**Note**: If the user selects A, the model MUST NOT redefine the process - only reference it and ensure artifacts (e.g., deployment configs, runbooks) are compatible with it.
 
 ---
 
 ## Rule RESILIENCY-04: Automated Deployment and Rollback
 
-**Rule**: All production deployments ideally should be automated, and the rollback approach MUST be explicitly chosen by the user — not inferred by the model. The project MUST reuse the organization's existing CI/CD tooling and deployment conventions where they exist.
+**Rule**: All production deployments ideally should be automated, and the rollback approach MUST be explicitly chosen by the user - not inferred by the model. The project MUST reuse the organization's existing CI/CD tooling and deployment conventions where they exist.
 
 **Definitions** (to remove ambiguity):
-- **Rollback**: The defined mechanism to return the running workload to its last known-good state after a failed deployment. This rule does NOT assume a specific mechanism — the user selects one below.
+- **Rollback**: The defined mechanism to return the running workload to its last known-good state after a failed deployment. This rule does NOT assume a specific mechanism - the user selects one below.
 - **Deployment style**: The strategy used to release a change (direct/in-place, rolling, blue/green, or canary).
 
 **Clarifying Questions (ask during Requirements or NFR Design; do not assume answers)**:
@@ -146,9 +146,9 @@ X) Other (describe after [Answer]: tag below)
 ## Question: CI/CD and Deployment Tooling
 What CI/CD tooling and deployment process should this workload use?
 
-A) Use our existing CI/CD pipeline — provide the tool (e.g., GitHub Actions, GitLab CI, Jenkins, CodePipeline). AI-DLC will produce artifacts compatible with it.
+A) Use our existing CI/CD pipeline - provide the tool (e.g., GitHub Actions, GitLab CI, Jenkins, CodePipeline). AI-DLC will produce artifacts compatible with it.
 
-B) No pipeline exists — AI-DLC should propose a CI/CD pipeline definition appropriate to the chosen IaC and runtime.
+B) No pipeline exists - AI-DLC should propose a CI/CD pipeline definition appropriate to the chosen IaC and runtime.
 
 X) Other (describe after [Answer]: tag below)
 
@@ -163,9 +163,9 @@ B) Blue/green swap back to the previous environment
 
 C) Canary auto-rollback on health/metric regression
 
-D) Database-aware rollback required (schema/data migration reversal) — flag for explicit design
+D) Database-aware rollback required (schema/data migration reversal) - flag for explicit design
 
-E) Use our organization's existing rollback procedure — provide reference
+E) Use our organization's existing rollback procedure - provide reference
 
 X) Other (describe after [Answer]: tag below)
 
@@ -174,7 +174,7 @@ X) Other (describe after [Answer]: tag below)
 ## Question: Deployment Style
 What deployment strategy is acceptable for this workload's risk profile?
 
-A) Direct / in-place (lowest cost, highest blast radius) — acceptable for non-critical workloads
+A) Direct / in-place (lowest cost, highest blast radius) - acceptable for non-critical workloads
 
 B) Rolling (gradual instance replacement)
 
@@ -202,7 +202,7 @@ X) Other (describe after [Answer]: tag below)
 
 ## Rule RESILIENCY-05: Monitoring and Alerting for Critical Workloads
 
-**Rule**: Every deployed workload MUST have monitoring configured across the three pillars of observability — metrics, logs, and traces:
+**Rule**: Every deployed workload MUST have monitoring configured across the three pillars of observability - metrics, logs, and traces:
 - **Metrics**: Key operational metrics MUST be collected (latency, error rate, throughput, saturation) for each component
 - **Logs**: Structured logging MUST be configured and routed to a centralized log service
 - **Traces**: For distributed systems with multiple services, distributed tracing MUST be configured to track requests across service boundaries
@@ -260,19 +260,19 @@ X) Other (describe after [Answer]: tag below)
 - **Load balancing**: Traffic MUST be distributed across zones using a load balancer or DNS-based routing
 - **Static stability**: The architecture MUST continue operating if one zone becomes unavailable, without requiring control plane operations to recover
 
-**Multi-region decision (user-driven — do not infer)**:
+**Multi-region decision (user-driven - do not infer)**:
 
-The choice between single-region multi-zone and multi-region is a cost/complexity tradeoff that MUST be made by the user. If the RESILIENCY-02 answer was D (Active/Active) or C (Warm Standby with cross-region scope), multi-region is implied — confirm with the user. Otherwise ask:
+The choice between single-region multi-zone and multi-region is a cost/complexity tradeoff that MUST be made by the user. If the RESILIENCY-02 answer was D (Active/Active) or C (Warm Standby with cross-region scope), multi-region is implied - confirm with the user. Otherwise ask:
 
 ```markdown
 ## Question: Regional Topology
 Does this workload require multi-region deployment, or is single-region with multi-zone redundancy sufficient?
 
-A) Single-region, multi-zone — tolerates zone failure, not full-region failure. Lower cost. (Aligns with RTO/RPO options A/B/E.)
+A) Single-region, multi-zone - tolerates zone failure, not full-region failure. Lower cost. (Aligns with RTO/RPO options A/B/E.)
 
-B) Multi-region active-passive — survives region failure with failover. Higher cost. (Aligns with Warm Standby / Pilot Light cross-region.)
+B) Multi-region active-passive - survives region failure with failover. Higher cost. (Aligns with Warm Standby / Pilot Light cross-region.)
 
-C) Multi-region active-active — survives region failure with no downtime. Highest cost. (Aligns with Active/Active.)
+C) Multi-region active-active - survives region failure with no downtime. Highest cost. (Aligns with Active/Active.)
 
 X) Other (describe after [Answer]: tag below)
 
@@ -310,7 +310,7 @@ X) Other (describe after [Answer]: tag below)
 ## Rule RESILIENCY-10: Dependency Isolation and Circuit Breaking
 
 **Rule**: Applications MUST implement patterns to prevent cascading failures from dependency outages:
-- **Timeouts**: All external calls (HTTP, database, cache) MUST have explicit timeouts configured — no unbounded waits
+- **Timeouts**: All external calls (HTTP, database, cache) MUST have explicit timeouts configured - no unbounded waits
 - **Circuit breakers**: Services calling external dependencies SHOULD implement circuit breaker patterns to fail fast when a dependency is unhealthy
 - **Bulkheads**: Critical workloads SHOULD isolate dependency pools (connection pools, thread pools) to prevent one failing dependency from exhausting shared resources
 - **Graceful degradation**: Applications MUST define degraded-mode behavior when non-critical dependencies are unavailable
@@ -331,11 +331,11 @@ X) Other (describe after [Answer]: tag below)
 
 **Rule**: Every production workload with persistent state MUST have a documented disaster recovery strategy appropriate to its RTO/RPO targets:
 - **Strategy selection**: Choose from established DR strategies based on business requirements:
-  - Backup & Restore (RTO/RPO: hours) — lowest cost
-  - Pilot Light (RTO/RPO: tens of minutes) — data live, services idle
-  - Warm Standby (RTO/RPO: minutes) — data live, services at reduced capacity
-  - Hot Standby / Active-Passive (RTO/RPO: minutes) — data live, services ready
-  - Active/Active (RTO/RPO: real-time) — highest cost, zero downtime
+  - Backup & Restore (RTO/RPO: hours) - lowest cost
+  - Pilot Light (RTO/RPO: tens of minutes) - data live, services idle
+  - Warm Standby (RTO/RPO: minutes) - data live, services at reduced capacity
+  - Hot Standby / Active-Passive (RTO/RPO: minutes) - data live, services ready
+  - Active/Active (RTO/RPO: real-time) - highest cost, zero downtime
 - **Cost alignment**: The DR strategy cost MUST be justified by the business impact of downtime
 - **Documentation**: The chosen DR strategy MUST be documented with clear failover and failback procedures
 
@@ -395,11 +395,11 @@ X) Other (describe after [Answer]: tag below)
 ## Question: Resiliency Testing Approach
 How will resiliency mechanisms (failover, recovery) be validated?
 
-A) Use our existing DR testing / game day / chaos engineering practice — provide the reference. AI-DLC will document test scenarios that fit it.
+A) Use our existing DR testing / game day / chaos engineering practice - provide the reference. AI-DLC will document test scenarios that fit it.
 
-B) No practice exists — AI-DLC should propose a DR testing schedule and chaos experiment plan for adoption.
+B) No practice exists - AI-DLC should propose a DR testing schedule and chaos experiment plan for adoption.
 
-C) Defer to the Operations phase — capture test scenarios now, execute during Operations.
+C) Defer to the Operations phase - capture test scenarios now, execute during Operations.
 
 X) Other (describe after [Answer]: tag below)
 
@@ -417,7 +417,7 @@ X) Other (describe after [Answer]: tag below)
 
 ## Rule RESILIENCY-15: Incident Response and Correction of Errors
 
-**Rule**: Every project MUST integrate with an incident response process. As with change management, the default expectation is that the organization already HAS an incident response process — this rule directs the project to reference and conform to it.
+**Rule**: Every project MUST integrate with an incident response process. As with change management, the default expectation is that the organization already HAS an incident response process - this rule directs the project to reference and conform to it.
 
 **Clarifying Question (ask during Requirements or NFR Design; do not assume)**:
 
@@ -425,9 +425,9 @@ X) Other (describe after [Answer]: tag below)
 ## Question: Incident Response Process
 How are production incidents handled for this workload?
 
-A) Use our existing incident response process — provide the reference (e.g., PagerDuty runbooks, internal IR/on-call process). AI-DLC will align alerting and runbooks to it.
+A) Use our existing incident response process - provide the reference (e.g., PagerDuty runbooks, internal IR/on-call process). AI-DLC will align alerting and runbooks to it.
 
-B) No formal process exists — AI-DLC should propose a lightweight incident response and Correction of Errors (COE) process for adoption.
+B) No formal process exists - AI-DLC should propose a lightweight incident response and Correction of Errors (COE) process for adoption.
 
 X) Other (describe after [Answer]: tag below)
 
@@ -440,7 +440,7 @@ X) Other (describe after [Answer]: tag below)
 - Alerting from RESILIENCY-05 routes into the identified incident response process
 - Corrective action tracking mechanism is identified
 
-**Note**: If the user selects A, the model MUST reference the existing process and ensure observability/alerting integrates with it — not redefine it.
+**Note**: If the user selects A, the model MUST reference the existing process and ensure observability/alerting integrates with it - not redefine it.
 
 ---
 
@@ -449,7 +449,7 @@ X) Other (describe after [Answer]: tag below)
 These rules are cross-cutting constraints that apply to every AI-DLC stage. At each stage:
 - Evaluate all RESILIENCY rule verification criteria against the artifacts produced
 - Include a "Resiliency Compliance" section in the stage completion summary listing each rule as compliant, non-compliant, or N/A
-- If any rule is non-compliant, this is a blocking resiliency finding — follow the blocking finding behavior defined in the Overview
+- If any rule is non-compliant, this is a blocking resiliency finding - follow the blocking finding behavior defined in the Overview
 - Include resiliency rule references in design documentation, infrastructure templates, and test instructions
 
 ---
@@ -460,21 +460,21 @@ The following table maps each rule to a corresponding concept in the AWS Well-Ar
 
 | RESILIENCY Rule | Reliability Concept |
 |---|---|
-| RESILIENCY-01 | Workload architecture — understand business impact |
-| RESILIENCY-02 | Design for availability — define recovery objectives |
-| RESILIENCY-03 | Change management — control changes |
-| RESILIENCY-04 | Deployment automation — automate changes |
-| RESILIENCY-05 | Monitor workload resources — observability |
-| RESILIENCY-06 | Design interactions to prevent failures — health checks |
-| RESILIENCY-07 | Monitor workload resources — resiliency posture |
-| RESILIENCY-08 | Use fault isolation — multi-zone |
-| RESILIENCY-09 | Design for horizontal scaling — auto-scaling |
-| RESILIENCY-10 | Design interactions to prevent failures — circuit breaking |
-| RESILIENCY-11 | Plan for disaster recovery — strategy selection |
-| RESILIENCY-12 | Back up data — automated backups |
-| RESILIENCY-13 | Design for recovery — failover procedures |
-| RESILIENCY-14 | Test reliability — chaos engineering and DR testing |
-| RESILIENCY-15 | Operate and observe — incident response and learning |
+| RESILIENCY-01 | Workload architecture - understand business impact |
+| RESILIENCY-02 | Design for availability - define recovery objectives |
+| RESILIENCY-03 | Change management - control changes |
+| RESILIENCY-04 | Deployment automation - automate changes |
+| RESILIENCY-05 | Monitor workload resources - observability |
+| RESILIENCY-06 | Design interactions to prevent failures - health checks |
+| RESILIENCY-07 | Monitor workload resources - resiliency posture |
+| RESILIENCY-08 | Use fault isolation - multi-zone |
+| RESILIENCY-09 | Design for horizontal scaling - auto-scaling |
+| RESILIENCY-10 | Design interactions to prevent failures - circuit breaking |
+| RESILIENCY-11 | Plan for disaster recovery - strategy selection |
+| RESILIENCY-12 | Back up data - automated backups |
+| RESILIENCY-13 | Design for recovery - failover procedures |
+| RESILIENCY-14 | Test reliability - chaos engineering and DR testing |
+| RESILIENCY-15 | Operate and observe - incident response and learning |
 
 ## Appendix: Resilience Readiness Pillar Mapping (AWS RRR)
 

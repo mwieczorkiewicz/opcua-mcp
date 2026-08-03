@@ -1,8 +1,8 @@
-# Domain Entities — Unit 2: Subscription Management
+# Domain Entities - Unit 2: Subscription Management
 
 Answers referenced are from `unit-2-subscription-management-functional-design-plan.md`.
 
-## `subscriptionRecord` (in-memory only — the persisted form is `store.SubscriptionIntent`)
+## `subscriptionRecord` (in-memory only - the persisted form is `store.SubscriptionIntent`)
 ```go
 type subscriptionRecord struct {
     ID         string    // uuid.NewString() (Q1=A)
@@ -12,7 +12,7 @@ type subscriptionRecord struct {
 }
 ```
 
-## `intervalGroup` (in-memory only, one per distinct `intervalMs` in active use — Q2=A)
+## `intervalGroup` (in-memory only, one per distinct `intervalMs` in active use - Q2=A)
 ```go
 type intervalGroup struct {
     IntervalMs     int
@@ -24,9 +24,9 @@ type intervalGroup struct {
 ```
 `RefCount` reaching zero (the last logical subscription referencing this
 interval is removed) is what triggers tearing down the underlying gopcua
-`Subscription` (`Cancel`) — see `business-rules.md` BR-3.
+`Subscription` (`Cancel`) - see `business-rules.md` BR-3.
 
-## `SubscriptionInfo` (exported, tool-facing — returned by `ListSubscriptions`)
+## `SubscriptionInfo` (exported, tool-facing - returned by `ListSubscriptions`)
 ```go
 type SubscriptionInfo struct {
     ID         string
@@ -36,7 +36,7 @@ type SubscriptionInfo struct {
 }
 ```
 Identical shape to `subscriptionRecord` today (no live/derived fields
-beyond what's already tracked) — kept as a distinct exported type per
+beyond what's already tracked) - kept as a distinct exported type per
 `application-design.md`'s original design (tool-facing vs. persistence/
 internal-facing shapes are allowed to diverge later without changing the
 persisted schema).

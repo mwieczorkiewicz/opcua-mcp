@@ -7,16 +7,16 @@ under ~72 characters; add a body only when the *why* isn't obvious from the diff
 
 ## Types
 
-- `feat` — new capability or behavior that didn't exist before.
-- `fix` — corrects incorrect behavior (bug fix), including data races,
+- `feat` - new capability or behavior that didn't exist before.
+- `fix` - corrects incorrect behavior (bug fix), including data races,
   correctness bugs, and validation gaps.
-- `chore` — dependency bumps, tooling, config plumbing with no behavior change.
-- `docs` — documentation only (README, plan docs, comments-as-docs).
-- `refactor` — internal restructuring with no observable behavior change.
-- `test` — adds or fixes tests only.
-- `perf` — performance improvement with no behavior change.
-- `build` — build system, Makefile, Dockerfile changes.
-- `ai` — AI-authored scaffolding/process artifacts (e.g. this repo's aidlc rules),
+- `chore` - dependency bumps, tooling, config plumbing with no behavior change.
+- `docs` - documentation only (README, plan docs, comments-as-docs).
+- `refactor` - internal restructuring with no observable behavior change.
+- `test` - adds or fixes tests only.
+- `perf` - performance improvement with no behavior change.
+- `build` - build system, Makefile, Dockerfile changes.
+- `ai` - AI-authored scaffolding/process artifacts (e.g. this repo's aidlc rules),
   not application code changes.
 
 ## Examples
@@ -45,6 +45,6 @@ When a commit implements a specific `docs/plan/plan.md` item, mention its ID
 fix: correct GetNodeClass int32 wire-type assertion
 
 Implements P0-3. NodeClass decodes as int32 on the wire (gopcua
-ua/variant.go), not ua.NodeClass — the old assertion always failed
+ua/variant.go), not ua.NodeClass - the old assertion always failed
 against a real server.
 ```

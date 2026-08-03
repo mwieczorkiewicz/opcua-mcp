@@ -5,7 +5,7 @@
 A single Go module (`github.com/mwieczorkiewicz/opcua-mcp`, one binary,
 `cmd/opcua-mcp`) with four internal packages. No microservices, no
 infrastructure-as-code, no external datastore beyond an embedded Bleve
-full-text index on local disk — this is a standalone server process, not a
+full-text index on local disk - this is a standalone server process, not a
 distributed system. It speaks two protocols: MCP (to its LLM client, over
 stdio or HTTP) and OPC-UA binary (to the industrial server it bridges to).
 
@@ -66,7 +66,7 @@ internal/opcua.DiscoveryService <--> Bleve full-text index (local disk, ./search
 ## Component Descriptions
 
 ### `cmd/opcua-mcp` (entrypoint)
-- **Purpose**: Process startup — load config, init logger, construct and
+- **Purpose**: Process startup - load config, init logger, construct and
   wire the `Client` and `Server`, connect eagerly unless stdio transport,
   start the server.
 - **Responsibilities**: Startup sequencing only; no business logic.
@@ -74,7 +74,7 @@ internal/opcua.DiscoveryService <--> Bleve full-text index (local disk, ./search
   `internal/opcua`.
 - **Type**: Application entrypoint.
 
-### `internal/mcp` — `Server`
+### `internal/mcp` - `Server`
 - **Purpose**: The MCP-facing layer. Registers all 15 tools and 2 resources,
   runs the transport loop, handles graceful shutdown.
 - **Responsibilities**: Tool/resource registration (`SetupTools`,
@@ -86,7 +86,7 @@ internal/opcua.DiscoveryService <--> Bleve full-text index (local disk, ./search
   `internal/config`, `internal/logger`, `mark3labs/mcp-go`.
 - **Type**: Application (protocol-facing service layer).
 
-### `internal/opcua` — `Client`
+### `internal/opcua` - `Client`
 - **Purpose**: Thin, connection-state-safe wrapper over `gopcua/opcua`'s
   low-level `*opcua.Client`.
 - **Responsibilities**: Connect/disconnect lifecycle (mutex-guarded state),
@@ -95,7 +95,7 @@ internal/opcua.DiscoveryService <--> Bleve full-text index (local disk, ./search
 - **Dependencies**: `gopcua/opcua`, `internal/config`, `internal/logger`.
 - **Type**: Client (wraps an external protocol library).
 
-### `internal/opcua` — `DiscoveryService`
+### `internal/opcua` - `DiscoveryService`
 - **Purpose**: Background address-space crawler + searchable cache.
 - **Responsibilities**: Periodic (ticker-driven) and on-demand
   (`opcua_force_discovery`) address-space walks with generation-tagged
@@ -116,7 +116,7 @@ internal/opcua.DiscoveryService <--> Bleve full-text index (local disk, ./search
 ### `internal/logger`
 - **Purpose**: Structured logging that's safe for stdio transport.
 - **Responsibilities**: `slog` handler construction (JSON/text), output
-  destination resolution — forces stderr whenever transport is stdio,
+  destination resolution - forces stderr whenever transport is stdio,
   regardless of configured output, since stdout carries the MCP JSON-RPC
   stream there.
 - **Dependencies**: Go standard library `log/slog` only.
@@ -160,14 +160,14 @@ sequenceDiagram
 ## Integration Points
 
 - **External protocol**: OPC-UA binary protocol (`opc.tcp://`) via
-  `gopcua/opcua` — the only external system this server talks to.
+  `gopcua/opcua` - the only external system this server talks to.
 - **MCP transport**: stdio (default, JSON-RPC over stdin/stdout, connects to
   OPC-UA lazily) or streamable HTTP (`SERVER_TRANSPORT=http`, connects
   eagerly).
 - **Local persistence**: a Bleve full-text index on local disk
-  (`SEARCH_INDEX_PATH`, default `./search_index`) — the only "datastore",
+  (`SEARCH_INDEX_PATH`, default `./search_index`) - the only "datastore",
   and it's embedded, not a separate service.
-- **No CDK/Terraform/CloudFormation, no Lambda, no managed cloud services** —
+- **No CDK/Terraform/CloudFormation, no Lambda, no managed cloud services** -
   this is a plain containerizable Go binary (see Dockerfile), deployable
   anywhere that can run a container or a Go binary and reach an OPC-UA
   endpoint.

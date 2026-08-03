@@ -1,7 +1,7 @@
-# Code Generation Plan — Unit 2: Subscription Management
+# Code Generation Plan - Unit 2: Subscription Management
 
 **Workspace root**: `/Users/mikolajwieczorkiewicz/software-engineering/opcua-mcp`.
-Brownfield — `internal/opcua/client.go` and `internal/opcua/mock_client_test.go`
+Brownfield - `internal/opcua/client.go` and `internal/opcua/mock_client_test.go`
 already exist (modify in-place); `internal/opcua/subscription.go`,
 `reconnect_watcher.go`, and their test files don't exist yet (create new).
 
@@ -23,14 +23,14 @@ already exist (modify in-place); `internal/opcua/subscription.go`,
 
 ## Steps
 
-- [x] **Step 1 — Extend `opcuaClient` interface**: add
+- [x] **Step 1 - Extend `opcuaClient` interface**: add
       `Subscribe(ctx, *opcua.SubscriptionParameters, chan<- *ua.PublishNotificationData) (*opcua.Subscription, error)`
       to `internal/opcua/client.go`'s `opcuaClient` interface (matches
       `*opcua.Client`'s real signature exactly, so the existing
       `var _ opcuaClient = (*opcua.Client)(nil)` assertion continues to
       hold with no changes needed there).
 
-- [x] **Step 2 — `Client` extensions**: in `client.go`, add:
+- [x] **Step 2 - `Client` extensions**: in `client.go`, add:
       - `stateCh chan<- ua.ConnState` field (guarded by the existing `mu`).
       - `SetStateChangeChannel(ch chan<- ua.ConnState)` (sets `stateCh`
         under `mu.Lock()`).
@@ -42,44 +42,44 @@ already exist (modify in-place); `internal/opcua/subscription.go`,
         returns the resulting `*opcua.Subscription` upcast to
         `subscriptionHandle` (defined in Step 3).
 
-- [x] **Step 3 — Seam interfaces**: create `internal/opcua/subscription.go`
+- [x] **Step 3 - Seam interfaces**: create `internal/opcua/subscription.go`
       (start of the file) with `subscribingClient` (Connect/
       SetStateChangeChannel/Subscribe - satisfied by `*Client`) and
       `subscriptionHandle` (Monitor/Unmonitor/Cancel - satisfied by
       `*opcua.Subscription`), plus compile-time assertions for both.
 
-- [x] **Step 4 — `ReconnectWatcher`**: create
+- [x] **Step 4 - `ReconnectWatcher`**: create
       `internal/opcua/reconnect_watcher.go` per
       `business-logic-model.md`'s watch-loop flowchart (BR-5 synchronous
       callback, BR-8 only-fire-on-first-Closed-after-Connected).
 
-- [x] **Step 5 — `SubscriptionManager` core**: continue
+- [x] **Step 5 - `SubscriptionManager` core**: continue
       `subscription.go` - struct fields (`domain-entities.md`), `NewSubscriptionManager`,
       `Start`/`Stop` (BR-7 warm-start sequencing, joining the pump
       goroutine and registering with `ReconnectWatcher`).
 
-- [x] **Step 6 — `Subscribe`/`Unsubscribe`/`ListSubscriptions`**: per
+- [x] **Step 6 - `Subscribe`/`Unsubscribe`/`ListSubscriptions`**: per
       `business-logic-model.md`'s flowcharts - BR-1 (uuid IDs), BR-2
       (interval sharing/refcounting), BR-3 (whole-group unsubscribe), BR-4
       (partial success).
 
-- [x] **Step 7 — Notification pump**: the batching goroutine per
+- [x] **Step 7 - Notification pump**: the batching goroutine per
       `business-logic-model.md` - BR-6 (log-and-continue on store errors),
       routing incoming notifications via `ClientHandle`.
 
-- [x] **Step 8 — Extend the mock seam**: create
+- [x] **Step 8 - Extend the mock seam**: create
       `internal/opcua/mock_subscription_test.go` - `mockSubscribingClient`
       (implements `subscribingClient`) and `mockSubscriptionHandle`
       (implements `subscriptionHandle`), with injectable funcs and call
       counters, following `mock_client_test.go`'s existing style.
 
-- [x] **Step 9 — `ReconnectWatcher` unit tests**: create
+- [x] **Step 9 - `ReconnectWatcher` unit tests**: create
       `internal/opcua/reconnect_watcher_test.go` - drives a fake
       `stateCh` through `Connected → Closed` (fires callback exactly once),
       `Connected → Reconnecting → Connected` (never fires), `Closed` without
       a prior `Connected` (never fires, BR-8).
 
-- [x] **Step 10 — `SubscriptionManager` unit tests**: create
+- [x] **Step 10 - `SubscriptionManager` unit tests**: create
       `internal/opcua/subscription_test.go` - `Subscribe` success,
       `Subscribe` partial failure (BR-4), two `Subscribe` calls at the same
       interval share one gopcua `Subscription` (BR-2, assert call counts),
@@ -89,14 +89,14 @@ already exist (modify in-place); `internal/opcua/subscription.go`,
       `Source: "subscription"`, a store write failure during the pump
       logs and continues (BR-6) rather than crashing.
 
-- [x] **Step 11 — Stateful property-based test**: create
+- [x] **Step 11 - Stateful property-based test**: create
       `internal/opcua/subscription_pbt_test.go` - `rapid`-driven command
       sequences (Subscribe/Unsubscribe) against a simplified reference
       model, asserting `ListSubscriptions()` matches the model and every
       `intervalGroup`'s `RefCount` invariant holds after each command
       (NFR Requirements Q2, PBT-06).
 
-- [x] **Step 12 — Documentation summary**: create
+- [x] **Step 12 - Documentation summary**: create
       `aidlc-docs/construction/unit-2-subscription-management/code/summary.md`.
 
 ## Story/Requirement Traceability

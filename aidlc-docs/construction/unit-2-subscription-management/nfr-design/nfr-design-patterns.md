@@ -1,9 +1,9 @@
-# NFR Design Patterns — Unit 2: Subscription Management
+# NFR Design Patterns - Unit 2: Subscription Management
 
 ## Resilience: reconnect rebuild (already the pattern, restated here)
 `ReconnectWatcher` + `SubscriptionManager.Start`'s warm-start logic
 (Functional Design BR-5/BR-7/BR-8) together *are* this unit's resilience
-pattern — a single-attempt rebuild on detected permanent client death,
+pattern - a single-attempt rebuild on detected permanent client death,
 relying on `Client`'s own retry/backoff rather than a second stacked policy
 (NFR Requirements Q1).
 
@@ -23,11 +23,11 @@ Interval-sharing (BR-2) already minimizes the number of live gopcua
 `SubscriptionManager.mu` guards `subscriptions`/`intervalGroups`/
 `nextHandle`, following `Client.mu`/`DiscoveryService.cacheMutex`'s
 established convention (Application Design Question 5). `ReconnectWatcher`
-needs no mutex of its own — its only mutable state (`everConnected`) is
+needs no mutex of its own - its only mutable state (`everConnected`) is
 touched exclusively within its own single watch-loop goroutine.
 
 ## Testability pattern: extend the existing mock seam, don't add a new one
 `opcuaClient` (from Phase 0/1) gains `Subscribe`/`Monitor`/`Unmonitor`/
 `Cancel` methods for this unit's tests, rather than introducing a second,
-parallel mock interface — consistent with how `internal/opcua/discovery_test.go`'s
+parallel mock interface - consistent with how `internal/opcua/discovery_test.go`'s
 `treeBrowser` already reused the same seam for `Browse`.

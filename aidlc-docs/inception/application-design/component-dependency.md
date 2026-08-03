@@ -1,4 +1,4 @@
-# Component Dependencies — Phase 2
+# Component Dependencies - Phase 2
 
 ## Dependency Matrix
 
@@ -12,12 +12,12 @@
 | `cmd/opcua-mcp` | all of the above, for construction/wiring | Compile |
 
 No new dependency on `internal/config`/`internal/logger` beyond what
-already exists — both remain leaf packages.
+already exists - both remain leaf packages.
 
 ## Communication Patterns
 
 - **`mcp.Server` → `CachingClient`/`SubscriptionManager`**: direct method
-  calls, same pattern as today's `mcp.Server` → `opcua.Client` calls — no
+  calls, same pattern as today's `mcp.Server` → `opcua.Client` calls - no
   new communication mechanism (no internal message bus, no channels
   crossing this boundary).
 - **`SubscriptionManager` internal (pump goroutine)**: gopcua's
@@ -27,12 +27,12 @@ already exists — both remain leaf packages.
   `chan<- ua.ConnState` gopcua writes into) → watcher goroutine → calls
   `onPermanentDeath` callback synchronously in that goroutine (the callback
   itself, `SubscriptionManager`'s rebuild logic, is expected to be quick to
-  invoke though its work may take time — Functional Design decides whether
+  invoke though its work may take time - Functional Design decides whether
   the callback itself spawns further async work).
 - **`CachingClient` ↔ `SubscriptionManager` (provenance)**: no direct
   dependency between these two components (see `services.md`'s
   recommendation to carry provenance in `store.ValueEntry` itself instead)
-  — avoids a dependency cycle risk between the two new components.
+  - avoids a dependency cycle risk between the two new components.
 
 ## Data Flow Diagram
 

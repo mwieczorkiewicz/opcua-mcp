@@ -1,4 +1,4 @@
-# Logical Components — Unit 2: Subscription Management
+# Logical Components - Unit 2: Subscription Management
 
 | Logical Component | Present? | Notes |
 |---|---|---|

@@ -3,7 +3,7 @@
 ## Image
 
 Multi-stage build: `cgr.dev/chainguard/go` (builder) → `scratch` (runtime).
-No shell, no package manager, nothing but the static binary — minimal attack
+No shell, no package manager, nothing but the static binary - minimal attack
 surface, linux/amd64 and linux/arm64.
 
 ```bash
@@ -89,7 +89,7 @@ make compose-down        # stop everything
 ### Testing with a Claude custom connector
 
 Claude's custom connector URL field (Settings → Connectors → Add custom
-connector) requires a publicly reachable `https://` endpoint — it rejects
+connector) requires a publicly reachable `https://` endpoint - it rejects
 `http://localhost`, since the connection is made from Anthropic's
 infrastructure, not your machine. The `cloudflared` service handles this
 with a free, no-account "quick tunnel":
@@ -100,7 +100,7 @@ make connector-url     # prints the URL to paste into Claude, e.g. https://xyz.t
 ```
 
 Paste the printed URL into Claude's "Add custom connector" dialog. The
-tunnel URL is ephemeral and regenerates on every `cloudflared` restart —
+tunnel URL is ephemeral and regenerates on every `cloudflared` restart -
 re-run `make connector-url` after any `make compose-up`.
 
 > **Security**: while this stack is running, that URL is reachable by
@@ -119,4 +119,4 @@ healthcheck:
   start_period: 40s
 ```
 
-Only meaningful in HTTP mode — stdio mode has no listening port to probe.
+Only meaningful in HTTP mode - stdio mode has no listening port to probe.

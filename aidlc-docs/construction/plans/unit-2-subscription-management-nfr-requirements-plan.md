@@ -1,4 +1,4 @@
-# NFR Requirements Plan — Unit 2: Subscription Management
+# NFR Requirements Plan - Unit 2: Subscription Management
 
 ## Plan
 - [ ] Answer the questions below
@@ -18,7 +18,7 @@
 
 ## Questions
 
-### Question 1 — Reconnect rebuild retry strategy
+### Question 1 - Reconnect rebuild retry strategy
 `Client.Connect(ctx)` already has its own internal retry loop
 (`OPCUA_MAX_RETRIES`/`OPCUA_RETRY_DELAY`). If `ReconnectWatcher`'s
 `onPermanentDeath` callback calls `Client.Connect(ctx)` and that **entire**
@@ -32,7 +32,7 @@ C) Other (please describe after [Answer]: tag below)
 
 [Answer]: A)
 
-### Question 2 — Stateful PBT scope (resolves requirements.md NFR-3.3)
+### Question 2 - Stateful PBT scope (resolves requirements.md NFR-3.3)
 `rapid` (chosen in Unit 1) supports stateful/command-based testing. What
 should the stateful PBT model for `SubscriptionManager` actually check?
 
@@ -42,7 +42,7 @@ B) A narrower scope - describe after [Answer]: tag below
 
 [Answer]:A)
 
-### Question 3 — Performance target for the notification pump
+### Question 3 - Performance target for the notification pump
 `STORE_BATCH_WINDOW` (25ms) / `STORE_BATCH_MAX_ITEMS` (250) were already
 set as config defaults in Unit 1. Does Unit 2 need a specific throughput
 target to design/test against (e.g. "must keep up with N notifications/sec

@@ -1,4 +1,4 @@
-# Business Logic Model — Unit 3: Read-Through Caching & MCP Integration
+# Business Logic Model - Unit 3: Read-Through Caching & MCP Integration
 
 ## `CachingClient.Read` (BR-1, BR-2)
 

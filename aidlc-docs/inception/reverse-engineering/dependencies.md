@@ -38,7 +38,7 @@ No cyclic internal dependencies; `internal/config` and `internal/logger` depend 
 ## External Dependencies
 
 ### `github.com/gopcua/opcua` v0.9.0
-- **Purpose**: OPC-UA binary protocol client — the core capability this project bridges to MCP.
+- **Purpose**: OPC-UA binary protocol client - the core capability this project bridges to MCP.
 - **License**: MIT
 
 ### `github.com/mark3labs/mcp-go` v0.39.1
@@ -58,4 +58,4 @@ No cyclic internal dependencies; `internal/config` and `internal/logger` depend 
 - **Purpose**: Bleve's on-disk storage engine today; not yet used directly by this project's own code. Planned to be promoted to a direct dependency for Phase 2's persistent value/subscription cache (pre-approved in `CLAUDE.md`'s hard rules).
 - **License**: MIT
 
-All other entries in `go.mod`'s indirect block are transitive dependencies of the four direct dependencies above (mostly bleve's own segment/storage backends and mcp-go's JSON-schema tooling) — not independently significant to this project's own architecture.
+All other entries in `go.mod`'s indirect block are transitive dependencies of the four direct dependencies above (mostly bleve's own segment/storage backends and mcp-go's JSON-schema tooling) - not independently significant to this project's own architecture.
