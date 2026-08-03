@@ -6,9 +6,7 @@ services:
       - "4840:4840"
 
   opcua-mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/mwieczorkiewicz/opcua-mcp:main-f0b638d
     depends_on:
       - opcua-server
     restart: unless-stopped

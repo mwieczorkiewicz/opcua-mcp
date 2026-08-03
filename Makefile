@@ -191,10 +191,11 @@ dev-setup:
 		$(GOGET) github.com/securecodewarrior/gosec/v2/cmd/gosec@latest; \
 	fi
 
-# Build the docker-compose images (opcua-mcp built locally from the Dockerfile)
+# Pull the docker-compose images (opcua-mcp now runs the prebuilt ghcr.io
+# image pinned in docker-compose.yml, rather than building locally)
 compose-build:
-	@echo "Building docker-compose images..."
-	docker compose build
+	@echo "Pulling docker-compose images..."
+	docker compose pull
 
 # Start the Microsoft OPC UA test server standalone (detached), for manual dev use
 compose-up-server:
@@ -251,7 +252,7 @@ help:
 	@echo "  docker-build     - Build Docker image"
 	@echo "  docker-run       - Run Docker container"
 	@echo "  docker-run-with-volume - Run Docker container with volume"
-	@echo "  compose-build    - Build docker-compose images (opcua-mcp built locally)"
+	@echo "  compose-build    - Pull docker-compose images (opcua-mcp runs the prebuilt ghcr.io image)"
 	@echo "  compose-up-server - Start Microsoft OPC UA test server via docker-compose (detached)"
 	@echo "  compose-up       - Start full stack: test server, opcua-mcp (HTTP), cloudflared tunnel"
 	@echo "  compose-down     - Stop and remove docker-compose services"
