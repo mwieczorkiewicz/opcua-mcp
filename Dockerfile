@@ -15,7 +15,13 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags "-X github.com/mwieczorkiewicz/opcua-mcp/internal/telemetry.appKey=${APTABASE_APP_KEY}" \
     -o opcua-mcp ./cmd/opcua-mcp.go
 
-FROM scratch
+# chainguard/static (not `scratch`) - scratch has no CA certificate bundle at
+# all, so any outbound TLS call (e.g. internal/telemetry's HTTPS POST to
+# Aptabase) fails verification with "x509: certificate signed by unknown
+# authority". chainguard/static is Chainguard's distroless-equivalent: still
+# no shell, no package manager, nothing but the binary and a CA bundle - same
+# minimal attack surface as scratch, just with working TLS.
+FROM cgr.dev/chainguard/static:latest
 WORKDIR /
 COPY --from=builder /build/opcua-mcp /
 
