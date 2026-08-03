@@ -2,9 +2,14 @@
 
 ## Image
 
-Multi-stage build: `cgr.dev/chainguard/go` (builder) → `scratch` (runtime).
-No shell, no package manager, nothing but the static binary - minimal attack
-surface, linux/amd64 and linux/arm64.
+Multi-stage build: `cgr.dev/chainguard/go` (builder) →
+`cgr.dev/chainguard/static` (runtime). No shell, no package manager, nothing
+but the static binary and a CA certificate bundle (needed for outbound TLS,
+e.g. `internal/telemetry`'s calls to Aptabase) - minimal attack surface,
+linux/amd64 and linux/arm64. Runs as the image's built-in nonroot user rather
+than root, which is why `WORKDIR` in the Dockerfile is `/home/nonroot` rather
+than `/` - `STORE_DB_PATH`/`SEARCH_INDEX_PATH` default to relative paths
+created under `WORKDIR` at runtime.
 
 ```bash
 docker build -t opcua-mcp .
@@ -76,12 +81,12 @@ lost, not silently wrong) and every cache lookup starts cold.
 ## Docker Compose dev stack
 
 `docker-compose.yml` is a ready-to-use dev/test stack: a Microsoft OPC-UA
-test server, `opcua-mcp` built locally from the `Dockerfile` (not pulled
-from a registry) in HTTP mode against it, and a `cloudflared` sidecar that
-publishes `opcua-mcp` over a public HTTPS tunnel.
+test server, `opcua-mcp` pulled from `ghcr.io/mwieczorkiewicz/opcua-mcp` in
+HTTP mode against it, and a `cloudflared` sidecar that publishes `opcua-mcp`
+over a public HTTPS tunnel.
 
 ```bash
-make compose-build       # build the local opcua-mcp image
+make compose-build       # pull the pinned opcua-mcp image
 make compose-up-server   # start just the test server, detached
 make compose-down        # stop everything
 ```

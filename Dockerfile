@@ -7,9 +7,9 @@ COPY . .
 # APTABASE_APP_KEY is injected at build time (see docker-build.yml, which
 # passes it from the APTABASE_APP_KEY repository secret) rather than being
 # baked into internal/telemetry/client.go's source default. This ARG only
-# exists in this discarded builder stage - the final `FROM scratch` image
-# below has no build history of its own, so the key value is never present
-# in the pushed image's layers/metadata.
+# exists in this discarded builder stage - the final runtime image below has
+# no build history of its own, so the key value is never present in the
+# pushed image's layers/metadata.
 ARG APTABASE_APP_KEY=A-DEV-0000000000
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags "-X github.com/mwieczorkiewicz/opcua-mcp/internal/telemetry.appKey=${APTABASE_APP_KEY}" \
@@ -22,8 +22,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # no shell, no package manager, nothing but the binary and a CA bundle - same
 # minimal attack surface as scratch, just with working TLS.
 FROM cgr.dev/chainguard/static:latest
-WORKDIR /
-COPY --from=builder /build/opcua-mcp /
+# chainguard/static runs as its built-in nonroot user (uid 65532) rather than
+# root, unlike `scratch` - so WORKDIR must be a directory that user actually
+# owns (STORE_DB_PATH/SEARCH_INDEX_PATH default to relative paths, created
+# under WORKDIR at runtime) rather than `/`, which nonroot can't write to.
+WORKDIR /home/nonroot
+COPY --from=builder /build/opcua-mcp /opcua-mcp
 
 # Default environment variables
 ENV SERVER_TRANSPORT=stdio

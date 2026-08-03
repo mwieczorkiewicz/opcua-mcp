@@ -107,5 +107,12 @@ func (c *httpClient) send(payload eventPayload) {
 
 	if resp.StatusCode >= 300 {
 		logger.Debug("telemetry: non-2xx response, event may not have been recorded", "status", resp.StatusCode)
+		return
 	}
+
+	// A positive confirmation, not just the absence of a failure log above -
+	// two separate silent-failure bugs (wrong endpoint, missing CA certs)
+	// were each hard to diagnose from an all-quiet run with no explicit
+	// success signal at any log level to compare against.
+	logger.Debug("telemetry: event sent", "status", resp.StatusCode)
 }
