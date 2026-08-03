@@ -587,6 +587,7 @@ SERVER_TRANSPORT=http SERVER_HTTP_PORT=8080 OPCUA_ENDPOINT=opc.tcp://localhost:4
 - **Preserve env var and tool-name backward compatibility.** All 15 currently-registered tools are still present and ungated; any removal or gating (e.g. behind a feature flag) needs explicit sign-off and a README changelog callout, same bar as the `opcua_write`/stdio-logging behavior changes already called out there.
 - **Guard `Client.client`/`Client.connected` with `Client.mu`.** Every method must snapshot state via the `snapshot()` helper rather than reading the fields directly; don't add a new concurrent access path to `Client` without going through it.
 - **Don't call `store`/Bleve methods while holding `DiscoveryService.cacheMutex`** (and, once a `SubscriptionManager` exists, its own lock) - snapshot needed data under the lock, release, then do I/O. `discoveryMu` is held for a whole walk but never across a Bleve I/O call outside `updateSearchIndex`'s existing batch pattern - keep it that way.
+- **Never use em-dashes (`—`)**, anywhere - code comments, docs, commit messages, PR descriptions, chat responses. Use a hyphen (`-`), a comma, or split into two sentences instead. Em-dashes read as AI-generated slop.
 
 ### Conventions
 
