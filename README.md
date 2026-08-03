@@ -217,6 +217,10 @@ how the pieces being tested fit together, and
 [docs/COMMIT_CONVENTION.md](docs/COMMIT_CONVENTION.md) for this repo's
 commit message format.
 
+## Contributing
+
+Fork it, make your changes, open a PR — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## License
 
 [MIT](LICENSE)
