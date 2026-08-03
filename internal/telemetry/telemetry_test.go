@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -277,6 +278,57 @@ func TestNoopTelemetrySafeWithZeroValues(t *testing.T) {
 }
 
 // --- HTTP send never errors/panics ---
+
+// --- Aptabase ingest contract regression guards ---
+//
+// Both of these lock in a bug found the hard way: Aptabase's actual ingest
+// endpoint is the batch-only POST {host}/api/v0/events (plural) expecting a
+// JSON array body, per
+// https://github.com/aptabase/aptabase/wiki/How-to-build-your-own-SDK - not
+// POST {host}/api/v0/event with a bare object, which silently 404ed against
+// the real API (silently because send() only logs failures at debug level,
+// which the default log level suppresses).
+
+func TestIngestURLsUseBatchEventsEndpoint(t *testing.T) {
+	for _, url := range []string{usIngestURL, euIngestURL} {
+		if !strings.HasSuffix(url, "/api/v0/events") {
+			t.Errorf("ingest URL %q does not end in Aptabase's batch endpoint /api/v0/events", url)
+		}
+	}
+}
+
+func TestSendPostsBodyAsJSONArray(t *testing.T) {
+	var capturedBody []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer ts.Close()
+
+	c := &httpClient{hc: &http.Client{Timeout: sendTimeout}, url: ts.URL}
+	c.send(eventPayload{EventName: "session_summary"})
+
+	var events []json.RawMessage
+	if err := json.Unmarshal(capturedBody, &events); err != nil {
+		t.Fatalf("request body is not a JSON array: %v (body: %s)", err, capturedBody)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected exactly 1 event in the batch, got %d", len(events))
+	}
+
+	var single map[string]json.RawMessage
+	if err := json.Unmarshal(events[0], &single); err != nil {
+		t.Fatalf("events[0] is not a JSON object: %v", err)
+	}
+	var eventName string
+	if err := json.Unmarshal(single["eventName"], &eventName); err != nil {
+		t.Fatalf("events[0].eventName: %v", err)
+	}
+	if eventName != "session_summary" {
+		t.Errorf("events[0].eventName = %q, want %q", eventName, "session_summary")
+	}
+}
 
 func TestHTTPClientSendNeverErrorsOn500(t *testing.T) {
 	var requests int32

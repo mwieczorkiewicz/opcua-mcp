@@ -157,9 +157,9 @@ func (noopTelemetry) SetDiscoveryStats(int)      {}
 func (noopTelemetry) Start(context.Context)      {}
 func (noopTelemetry) Close()                     {}
 
-// eventPayload is the exact JSON body POSTed to Aptabase's event ingest API
-// (POST https://us.aptabase.com/api/v0/event), matching the shape used by
-// Aptabase's official SDKs.
+// eventPayload is the shape of one event in the JSON array POSTed to
+// Aptabase's ingest API (POST https://us.aptabase.com/api/v0/events - see
+// client.go's send), matching the shape used by Aptabase's official SDKs.
 type eventPayload struct {
 	Timestamp   string                 `json:"timestamp"`
 	SessionID   string                 `json:"sessionId"`
