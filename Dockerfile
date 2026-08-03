@@ -3,7 +3,17 @@ WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o opcua-mcp ./cmd/opcua-mcp.go
+
+# APTABASE_APP_KEY is injected at build time (see docker-build.yml, which
+# passes it from the APTABASE_APP_KEY repository secret) rather than being
+# baked into internal/telemetry/client.go's source default. This ARG only
+# exists in this discarded builder stage - the final `FROM scratch` image
+# below has no build history of its own, so the key value is never present
+# in the pushed image's layers/metadata.
+ARG APTABASE_APP_KEY=A-DEV-0000000000
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags "-X github.com/mwieczorkiewicz/opcua-mcp/internal/telemetry.appKey=${APTABASE_APP_KEY}" \
+    -o opcua-mcp ./cmd/opcua-mcp.go
 
 FROM scratch
 WORKDIR /
