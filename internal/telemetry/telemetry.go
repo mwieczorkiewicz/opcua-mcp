@@ -202,11 +202,17 @@ func buildPayload(cfg Config, snap aggregatorSnapshot, sessionDuration time.Dura
 	} else {
 		props["avg_params_per_call"] = 0.0
 	}
-	if len(snap.ToolCalls) > 0 {
-		props["tool_calls"] = snap.ToolCalls
+
+	// Flattened as one "tool_calls.<name>"/"errors.<kind>" scalar prop per
+	// tool/error kind, rather than a single nested-object prop value -
+	// Aptabase's dashboard renders a nested object as an opaque "{Object}"
+	// chip with no way to expand it, so a flat key per entry is what
+	// actually shows up as readable data in the Session Timeline view.
+	for name, count := range snap.ToolCalls {
+		props["tool_calls."+name] = count
 	}
-	if len(snap.ErrorCounts) > 0 {
-		props["errors"] = snap.ErrorCounts
+	for kind, count := range snap.ErrorCounts {
+		props["errors."+kind] = count
 	}
 
 	return eventPayload{

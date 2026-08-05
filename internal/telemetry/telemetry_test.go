@@ -92,6 +92,10 @@ var allowedSystemPropsKeys = map[string]bool{
 	"sdkVersion": true,
 }
 
+// allowedPropsKeys covers the fixed-name props. "tool_calls.<name>" and
+// "errors.<kind>" are dynamic per-tool/per-error-kind keys, not fixed names -
+// TestSessionSummaryPayloadAllowlist validates those by prefix instead,
+// checking the suffix against knownToolNames/knownErrorKinds.
 var allowedPropsKeys = map[string]bool{
 	"anon_id":                  true,
 	"session_duration_seconds": true,
@@ -104,8 +108,6 @@ var allowedPropsKeys = map[string]bool{
 	"cache_misses":             true,
 	"tool_call_count":          true,
 	"avg_params_per_call":      true,
-	"tool_calls":               true,
-	"errors":                   true,
 }
 
 // knownToolNames mirrors the tool names registered in
@@ -187,36 +189,41 @@ func TestSessionSummaryPayloadAllowlist(t *testing.T) {
 	if err := json.Unmarshal(generic["props"], &props); err != nil {
 		t.Fatalf("unmarshal props: %v", err)
 	}
-	for k := range props {
-		if !allowedPropsKeys[k] {
-			t.Errorf("props has disallowed key %q", k)
-		}
-	}
 
-	var toolCalls map[string]int64
-	if err := json.Unmarshal(props["tool_calls"], &toolCalls); err != nil {
-		t.Fatalf("unmarshal props.tool_calls: %v", err)
-	}
-	if len(toolCalls) == 0 {
-		t.Error("expected non-empty tool_calls in payload")
-	}
-	for name := range toolCalls {
-		if !knownToolNames[name] {
-			t.Errorf("tool_calls has disallowed key %q (not a known registered tool name)", name)
+	var toolCallKeys, errorKeys int
+	for k, raw := range props {
+		switch {
+		case allowedPropsKeys[k]:
+			continue
+		case strings.HasPrefix(k, "tool_calls."):
+			name := strings.TrimPrefix(k, "tool_calls.")
+			if !knownToolNames[name] {
+				t.Errorf("props has disallowed tool_calls key %q (not a known registered tool name)", k)
+			}
+			var n int64
+			if err := json.Unmarshal(raw, &n); err != nil {
+				t.Errorf("props[%q] is not a number: %v", k, err)
+			}
+			toolCallKeys++
+		case strings.HasPrefix(k, "errors."):
+			kind := strings.TrimPrefix(k, "errors.")
+			if !knownErrorKinds[kind] {
+				t.Errorf("props has disallowed errors key %q (not a known ErrKind* category)", k)
+			}
+			var n int64
+			if err := json.Unmarshal(raw, &n); err != nil {
+				t.Errorf("props[%q] is not a number: %v", k, err)
+			}
+			errorKeys++
+		default:
+			t.Errorf("props has disallowed top-level key %q", k)
 		}
 	}
-
-	var errs map[string]int64
-	if err := json.Unmarshal(props["errors"], &errs); err != nil {
-		t.Fatalf("unmarshal props.errors: %v", err)
+	if toolCallKeys == 0 {
+		t.Error("expected at least one tool_calls.* key in payload")
 	}
-	if len(errs) == 0 {
-		t.Error("expected non-empty errors in payload")
-	}
-	for kind := range errs {
-		if !knownErrorKinds[kind] {
-			t.Errorf("errors has disallowed key %q (not a known ErrKind* category)", kind)
-		}
+	if errorKeys == 0 {
+		t.Error("expected at least one errors.* key in payload")
 	}
 
 	var bucket string
