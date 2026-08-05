@@ -40,29 +40,20 @@ persistent store) is in the project README.
 Developer Tools
 
 ## Features
-- Read one or more OPC-UA node values in a single call, served from a live subscription cache
-  when available, or fetched live otherwise
-- Write values to nodes, with type validation against the node's declared data type before the
-  write is sent
-- Browse the address space one level at a time, or recursively to a depth limit
-- Look up nodes by browse name instead of raw node ID, via a background-built search index
-- Fuzzy/partial-match search across node browse names
-- Subscribe to push-based live updates on one or more nodes; subscriptions persist across server
-  restarts and are automatically re-established on reconnect
-- List, inspect, and cancel active subscriptions
-- Explicit connect/disconnect control, useful in stdio mode where the OPC-UA connection is
-  established lazily
-- Fetch node metadata - data type, access level, and other attributes
-- Fetch OPC-UA server metadata (name, URIs, build info)
-- Background discovery that continuously walks the address space and keeps the cache and search
-  index in sync via mark-and-sweep, so deleted nodes disappear and new nodes appear automatically
-- Trigger an immediate discovery refresh on demand instead of waiting for the next cycle
-- Diagnostics tools for troubleshooting why a specific node isn't showing up in search results
-- On-disk persistent caching (bbolt) for reads, browse results, and type info, with automatic
-  invalidation on writes, so repeat lookups don't round-trip to the device
-- Anonymous, username/password, or certificate authentication, with configurable OPC-UA security
-  policy and mode
-- Works over stdio for local/desktop MCP clients or HTTP for remote/hosted deployments
+- Read and write OPC-UA node values, with type validation on writes so a mismatched value never
+  reaches the device
+- Browse the address space one level at a time or recursively, and look nodes up by browse name
+  instead of raw node ID
+- Fuzzy/partial-match search across node names via a background-built index, so you don't need
+  the exact node ID
+- Subscribe to push-based live updates on any node; subscriptions persist across restarts and
+  auto-reconnect
+- Background discovery keeps the cache and search index in sync with the live address space
+  automatically
+- On-disk persistent caching for reads, browse results, and type info, so repeat lookups don't
+  round-trip to the device
+- Anonymous, username/password, or certificate authentication, over stdio (local) or HTTP
+  (remote) transport
 
 ## Getting Started
 - "Connect to my OPC-UA server and show me the server info"
