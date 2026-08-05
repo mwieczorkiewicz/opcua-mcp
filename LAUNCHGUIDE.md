@@ -39,21 +39,8 @@ persistent store) is in the project README.
 ## Category
 Developer Tools
 
-## Features
-- Read and write OPC-UA node values, with type validation on writes so a mismatched value never
-  reaches the device
-- Browse the address space one level at a time or recursively, and look nodes up by browse name
-  instead of raw node ID
-- Fuzzy/partial-match search across node names via a background-built index, so you don't need
-  the exact node ID
-- Subscribe to push-based live updates on any node; subscriptions persist across restarts and
-  auto-reconnect
-- Background discovery keeps the cache and search index in sync with the live address space
-  automatically
-- On-disk persistent caching for reads, browse results, and type info, so repeat lookups don't
-  round-trip to the device
-- Anonymous, username/password, or certificate authentication, over stdio (local) or HTTP
-  (remote) transport
+## Use Cases
+Read and write OPC-UA node values with type-validated writes, Browse the address space one level at a time or recursively, Look up nodes by browse name or fuzzy search instead of raw node ID, Subscribe to push-based live updates that persist across restarts and reconnects, Keep a cache and search index automatically in sync via background discovery, Reduce device round-trips with on-disk persistent caching for reads and browse results, Connect via anonymous username/password or certificate authentication over stdio or HTTP
 
 ## Getting Started
 - "Connect to my OPC-UA server and show me the server info"
