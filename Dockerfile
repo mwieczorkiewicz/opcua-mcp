@@ -29,6 +29,11 @@ FROM cgr.dev/chainguard/static:latest
 WORKDIR /home/nonroot
 COPY --from=builder /build/opcua-mcp /opcua-mcp
 
+# Required by the MCP registry (server.json) to verify this image is
+# published by the same owner as the registry entry - see
+# https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/package-types.mdx
+LABEL io.modelcontextprotocol.server.name="io.github.mwieczorkiewicz/opcua-mcp"
+
 # Default environment variables
 ENV SERVER_TRANSPORT=stdio
 ENV SERVER_HTTP_PORT=8080
