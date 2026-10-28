@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -33,9 +34,14 @@ type Server struct {
 	telemetry           telemetry.Telemetry
 
 	// telemetryCancel stops telemetry's flush loop; set by Start(), called by
-	// setupGracefulShutdown() before telemetry.Close() waits for the final
-	// flush to be dispatched.
+	// shutdown() before telemetry.Close() waits for the final flush to be
+	// dispatched.
 	telemetryCancel context.CancelFunc
+
+	// shutdownOnce makes shutdown() run at most once, since both the signal
+	// handler and a stdio client closing stdin can trigger it, possibly
+	// concurrently.
+	shutdownOnce sync.Once
 
 	// httpServerMu guards httpServer, which is set by startHTTP() and read by
 	// setupGracefulShutdown()'s signal-handling goroutine; it stays nil in
@@ -765,8 +771,22 @@ func (s *Server) Start() error {
 
 // startStdio starts the server in stdio mode
 func (s *Server) startStdio() error {
+	return s.serveStdio(context.Background(), os.Stdin, os.Stdout)
+}
+
+// serveStdio serves MCP over the given streams until stdin hits EOF, then
+// runs the same shutdown sequence as a signal would. MCP clients commonly
+// end a stdio server by closing stdin rather than signaling it, and without
+// this the process would exit straight from main() with no final telemetry
+// flush, no subscription manager stop and no store close. Signals are still
+// handled by setupGracefulShutdown(); shutdownOnce keeps the two paths from
+// running the sequence twice.
+func (s *Server) serveStdio(ctx context.Context, stdin io.Reader, stdout io.Writer) error {
 	logger.Info("Starting MCP server in stdio mode")
-	return server.ServeStdio(s.mcpServer)
+	err := server.NewStdioServer(s.mcpServer).Listen(ctx, stdin, stdout)
+	logger.Info("Stdio input closed, shutting down")
+	s.shutdown()
+	return err
 }
 
 // startHTTP starts the server in HTTP mode
@@ -1175,7 +1195,17 @@ func (s *Server) setupGracefulShutdown() {
 	go func() {
 		<-c
 		logger.Info("Received shutdown signal")
+		s.shutdown()
+		os.Exit(0)
+	}()
+}
 
+// shutdown stops every long-lived component in dependency order and flushes
+// telemetry one last time. It is safe to call more than once and from
+// multiple goroutines: only the first call does anything, and later callers
+// block until it has finished.
+func (s *Server) shutdown() {
+	s.shutdownOnce.Do(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -1230,7 +1260,5 @@ func (s *Server) setupGracefulShutdown() {
 			s.telemetryCancel()
 		}
 		s.telemetry.Close()
-
-		os.Exit(0)
-	}()
+	})
 }
