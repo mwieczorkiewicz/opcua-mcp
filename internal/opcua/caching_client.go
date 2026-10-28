@@ -157,7 +157,7 @@ func (c *CachingClient) readLive(ctx context.Context, nodeIDs []string) ([]ReadR
 	for i, v := range values {
 		result := ReadResult{
 			NodeID:          nodeIDs[i],
-			Value:           v.Value.Value(),
+			Value:           NormalizeReadValue(v.Value.Value()),
 			Status:          v.Status.Error(),
 			SourceTimestamp: v.SourceTimestamp,
 			ServerTimestamp: v.ServerTimestamp,
@@ -261,12 +261,13 @@ func (c *CachingClient) GetNodeTypeInfo(ctx context.Context, nodeID string) (*No
 
 	if c.cfg.EnableCache {
 		entry := store.TypeInfoEntry{
-			DataTypeID:      typeInfo.DataType.IntID(),
-			ValueRank:       typeInfo.ValueRank,
-			ArrayDimensions: typeInfo.ArrayDimensions,
-			AccessLevel:     typeInfo.AccessLevel,
-			UserAccessLevel: typeInfo.UserAccessLevel,
-			CachedAt:        time.Now(),
+			DataTypeID:        typeInfo.DataType.IntID(),
+			DataTypeNamespace: typeInfo.DataType.Namespace(),
+			ValueRank:         typeInfo.ValueRank,
+			ArrayDimensions:   typeInfo.ArrayDimensions,
+			AccessLevel:       typeInfo.AccessLevel,
+			UserAccessLevel:   typeInfo.UserAccessLevel,
+			CachedAt:          time.Now(),
 		}
 		if err := c.cache.PutTypeInfo(ctx, nodeID, entry); err != nil {
 			logger.Warn("CachingClient: typeinfo cache write failed", "node_id", nodeID, "error", err)
@@ -277,15 +278,17 @@ func (c *CachingClient) GetNodeTypeInfo(ctx context.Context, nodeID string) (*No
 }
 
 // typeInfoEntryToNodeTypeInfo reconstructs a *NodeTypeInfo from a cached
-// TypeInfoEntry, assuming namespace 0 for DataType - matching this
-// codebase's existing precedent (convertValueToOPCUAType/
-// validateScalarValue already operate purely on DataType.IntID(), never
-// checking namespace).
+// TypeInfoEntry, using its DataTypeNamespace - required so a cached
+// custom/vendor (non-namespace-0) DataType is still correctly rejected by
+// validateScalarValue/convertScalarValue's namespace check on a cache hit,
+// not just on a live GetNodeTypeInfo call. An entry cached before this
+// field existed defaults to namespace 0 (Go zero value), matching its
+// implicit assumption at the time - no migration needed.
 func typeInfoEntryToNodeTypeInfo(entry store.TypeInfoEntry) *NodeTypeInfo {
 	isWritable := (entry.AccessLevel & writeAccessBit) != 0
 	isUserWritable := (entry.UserAccessLevel & writeAccessBit) != 0
 	return &NodeTypeInfo{
-		DataType:        ua.NewNumericNodeID(0, entry.DataTypeID),
+		DataType:        ua.NewNumericNodeID(entry.DataTypeNamespace, entry.DataTypeID),
 		ValueRank:       entry.ValueRank,
 		ArrayDimensions: entry.ArrayDimensions,
 		IsArray:         entry.ValueRank > 0,

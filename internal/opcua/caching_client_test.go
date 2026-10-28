@@ -279,6 +279,34 @@ func TestCachingClientGetNodeTypeInfoCacheHitWithinTTL(t *testing.T) {
 	}
 }
 
+// TestCachingClientGetNodeTypeInfoPreservesNamespaceOnCacheHit covers the
+// fix to typeInfoEntryToNodeTypeInfo, which used to hardcode namespace 0
+// when reconstructing a cached TypeInfoEntry - silently losing a custom
+// DataType's namespace on every cache hit, letting it be misvalidated as a
+// builtin type on write if its numeric ID happened to collide with one.
+func TestCachingClientGetNodeTypeInfoPreservesNamespaceOnCacheHit(t *testing.T) {
+	client := newTestClient(t)
+	client.client = &mockOpcuaClient{} // must not be called on a cache hit
+	client.SetConnectedForTesting(true)
+
+	cache := newTestCacheStore(t)
+	ctx := context.Background()
+	if err := cache.PutTypeInfo(ctx, "ns=7;i=376", store.TypeInfoEntry{
+		DataTypeID: uint32(ua.TypeIDInt32), DataTypeNamespace: 2, ValueRank: -1, AccessLevel: 3, UserAccessLevel: 3, CachedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("PutTypeInfo() error: %v", err)
+	}
+
+	cc := NewCachingClient(client, cache, newEnabledSearchConfig(), time.Hour, time.Hour)
+	info, err := cc.GetNodeTypeInfo(ctx, "ns=7;i=376")
+	if err != nil {
+		t.Fatalf("GetNodeTypeInfo() error: %v", err)
+	}
+	if info.DataType.Namespace() != 2 {
+		t.Errorf("GetNodeTypeInfo() reconstructed DataType.Namespace() = %d, want 2 (preserved from cache)", info.DataType.Namespace())
+	}
+}
+
 func TestCachingClientGetNodeTypeInfoCacheMissGoesLiveAndCaches(t *testing.T) {
 	client := newTestClient(t)
 	client.client = &mockOpcuaClient{readFunc: typeInfoReadFunc(ua.NewNumericNodeID(0, uint32(ua.TypeIDDouble)), 3)}

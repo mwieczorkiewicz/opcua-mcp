@@ -16,13 +16,17 @@ type ValueEntry struct {
 }
 
 // TypeInfoEntry is cached node type information, keyed by node ID in the typeinfo bucket.
+// DataTypeNamespace defaults to 0 (builtin) for entries cached before this
+// field existed, matching their implicit namespace-0 assumption at the time
+// - no migration needed.
 type TypeInfoEntry struct {
-	DataTypeID      uint32
-	ValueRank       int32
-	ArrayDimensions []uint32
-	AccessLevel     byte
-	UserAccessLevel byte
-	CachedAt        time.Time
+	DataTypeID        uint32
+	DataTypeNamespace uint16
+	ValueRank         int32
+	ArrayDimensions   []uint32
+	AccessLevel       byte
+	UserAccessLevel   byte
+	CachedAt          time.Time
 }
 
 // BrowseEntry is a cached browse result, keyed by parent node ID in the browse bucket.

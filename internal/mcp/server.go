@@ -348,23 +348,23 @@ func (s *Server) handleNodeResource(ctx context.Context, req mcp.ReadResourceReq
 
 	// Format response - if multiple nodes, return array; if single node, return object
 	var response interface{}
+	var nodeResults []map[string]interface{}
 	if len(results) == 1 {
 		// Single node response
 		result := results[0]
 		response = map[string]interface{}{
 			"node_id":          nodeIDs[0],
-			"value":            result.Value.Value(),
+			"value":            opcua.NormalizeReadValue(result.Value.Value()),
 			"status":           result.Status,
 			"source_timestamp": result.SourceTimestamp,
 			"server_timestamp": result.ServerTimestamp,
 		}
 	} else {
 		// Multiple nodes response
-		var nodeResults []map[string]interface{}
 		for i, result := range results {
 			nodeResults = append(nodeResults, map[string]interface{}{
 				"node_id":          nodeIDs[i],
-				"value":            result.Value.Value(),
+				"value":            opcua.NormalizeReadValue(result.Value.Value()),
 				"status":           result.Status,
 				"source_timestamp": result.SourceTimestamp,
 				"server_timestamp": result.ServerTimestamp,
@@ -378,7 +378,13 @@ func (s *Server) handleNodeResource(ctx context.Context, req mcp.ReadResourceReq
 
 	responseJSON, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal response: %w", err)
+		if nodeResults != nil {
+			fixUnmarshalableValues(nodeResults)
+			responseJSON, err = json.MarshalIndent(response, "", "  ")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal response: %w", err)
+		}
 	}
 
 	return []mcp.ResourceContents{
@@ -473,10 +479,40 @@ func (s *Server) handleRead(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 
 	responseJSON, err := json.MarshalIndent(response, "", "  ")
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("Failed to marshal response: %v", err)), nil
+		responseJSON = marshalReadResponseWithFallback(response)
 	}
 
 	return mcp.NewToolResultText(string(responseJSON)), nil
+}
+
+// marshalReadResponseWithFallback re-marshals a multi-node read response
+// after a batch json.MarshalIndent failure, replacing just the offending
+// node's value with a descriptive error string instead of losing every
+// other node's result in the same response - mirrors Client.Read's existing
+// "one bad node must not discard the good results" guarantee, at the JSON
+// layer. NormalizeReadValue should make this unreachable in practice; this
+// is defense-in-depth for a value type it doesn't yet know how to handle.
+func marshalReadResponseWithFallback(response []map[string]interface{}) []byte {
+	fixUnmarshalableValues(response)
+	responseJSON, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		// Every entry above was individually verified marshalable, so this
+		// can only fail on something outside "value" (e.g. a bad UTF-8
+		// node_id) - fall back to a minimal, always-safe error payload
+		// rather than a second unhandled failure.
+		return []byte(fmt.Sprintf(`{"error": "failed to marshal read response: %s"}`, err))
+	}
+	return responseJSON
+}
+
+// fixUnmarshalableValues replaces any entry's "value" field that fails to
+// JSON-marshal on its own with a descriptive error string, in place.
+func fixUnmarshalableValues(entries []map[string]interface{}) {
+	for _, entry := range entries {
+		if _, err := json.Marshal(entry); err != nil {
+			entry["value"] = fmt.Sprintf("<value failed to marshal to JSON: %v>", err)
+		}
+	}
 }
 
 // handleWrite handles the opcua_write tool with enhanced type validation
@@ -616,7 +652,7 @@ func (s *Server) handleNodeInfo(ctx context.Context, req mcp.CallToolRequest) (*
 	if nodeClass == ua.NodeClassVariable {
 		results, err := s.opcuaClient.Read(ctx, []string{nodeID})
 		if err == nil && len(results) > 0 {
-			value = results[0].Value.Value()
+			value = opcua.NormalizeReadValue(results[0].Value.Value())
 		}
 	}
 
@@ -665,7 +701,7 @@ func (s *Server) handleServerInfoFallback(ctx context.Context, primaryErr error)
 
 	response := map[string]interface{}{
 		"node_id":          serverStatusNode,
-		"server_status":    result.Value.Value(),
+		"server_status":    opcua.NormalizeReadValue(result.Value.Value()),
 		"source_timestamp": result.SourceTimestamp,
 		"server_timestamp": result.ServerTimestamp,
 		"status":           result.Status,
@@ -827,7 +863,7 @@ func (s *Server) handleGetValue(ctx context.Context, req mcp.CallToolRequest) (*
 	result := results[0]
 	response := map[string]interface{}{
 		"node_id":          nodeID,
-		"value":            result.Value.Value(),
+		"value":            opcua.NormalizeReadValue(result.Value.Value()),
 		"status":           result.Status,
 		"source_timestamp": result.SourceTimestamp,
 		"server_timestamp": result.ServerTimestamp,
@@ -889,7 +925,7 @@ func (s *Server) handleGetValueByName(ctx context.Context, req mcp.CallToolReque
 		"browse_name":      nodeInfo.BrowseName,
 		"display_name":     nodeInfo.DisplayName,
 		"node_class":       nodeInfo.NodeClass,
-		"value":            result.Value.Value(),
+		"value":            opcua.NormalizeReadValue(result.Value.Value()),
 		"status":           result.Status,
 		"source_timestamp": result.SourceTimestamp,
 		"server_timestamp": result.ServerTimestamp,

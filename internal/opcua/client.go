@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -306,6 +308,16 @@ func (c *Client) Read(ctx context.Context, nodeIDs []string) ([]*ua.DataValue, e
 	// Send read request
 	resp, err := client.Read(ctx, req)
 	if err != nil {
+		// A transport-level failure decoding the whole ReadResponse can be
+		// triggered by a single problematic node - confirmed live against a
+		// real server: an unregistered custom DataType's value can desync
+		// gopcua's wire decode for the entire response ("unexpected EOF"),
+		// not just that one node's status going Bad. Isolate by retrying
+		// each node individually so the rest of the batch isn't lost too;
+		// the connection itself recovers for the very next call regardless.
+		if len(ids) > 1 {
+			return c.readIndividually(ctx, client, ids, nodeIDs), nil
+		}
 		return nil, fmt.Errorf("failed to read from OPC-UA server: %w", err)
 	}
 
@@ -314,6 +326,57 @@ func (c *Client) Read(ctx context.Context, nodeIDs []string) ([]*ua.DataValue, e
 	// (findings.md H3). Only a transport-level failure (handled above)
 	// produces a top-level error.
 	return resp.Results, nil
+}
+
+// batchFailureGracePeriod is a brief pause before each retry attempt in
+// readIndividually, whether the very first one (right after the batch
+// failure) or one following another node's individual failure. Confirmed
+// live against a real server: retrying immediately can race gopcua's own
+// connection teardown/recovery (the transport error can still be in the
+// middle of closing the connection), making the retry fail too with a
+// spurious "not connected"/"closed network connection" error, even for a
+// perfectly good node - whereas the same read succeeds if given a brief
+// moment first. A node whose failure is inherent (e.g. the same
+// undecodable custom type every time) can retrigger this same race for
+// whichever node is read right after it, so the grace period applies again
+// after any individual failure, not just once. This never blocks
+// indefinitely: ctx cancellation still wins.
+const batchFailureGracePeriod = 250 * time.Millisecond
+
+// readIndividually reads each node one at a time after a batch read failed,
+// so one problematic node's decode failure doesn't discard the rest of the
+// batch's results. A node that still fails in isolation gets a synthetic
+// Bad-status result rather than being silently dropped, preserving the
+// one-result-per-requested-node invariant callers rely on.
+func (c *Client) readIndividually(ctx context.Context, client opcuaClient, ids []*ua.NodeID, nodeIDs []string) []*ua.DataValue {
+	results := make([]*ua.DataValue, len(ids))
+	needsGracePeriod := true
+	for i, id := range ids {
+		if needsGracePeriod {
+			select {
+			case <-time.After(batchFailureGracePeriod):
+			case <-ctx.Done():
+			}
+			needsGracePeriod = false
+		}
+
+		req := &ua.ReadRequest{
+			MaxAge:             0,
+			TimestampsToReturn: ua.TimestampsToReturnBoth,
+			NodesToRead: []*ua.ReadValueID{
+				{NodeID: id, AttributeID: ua.AttributeIDValue},
+			},
+		}
+		resp, err := client.Read(ctx, req)
+		if err != nil || len(resp.Results) == 0 {
+			needsGracePeriod = true
+			logger.Warn("Client.Read: node failed even when read in isolation after a batch read failure, returning a synthetic bad-status result", "node_id", nodeIDs[i], "error", err)
+			results[i] = &ua.DataValue{Status: ua.StatusBadDecodingError, Value: ua.MustVariant(nil)}
+			continue
+		}
+		results[i] = resp.Results[0]
+	}
+	return results
 }
 
 // Write writes values to the specified node IDs with intelligent type conversion
@@ -948,6 +1011,16 @@ func (c *Client) ValidateValueForNode(value interface{}, typeInfo *NodeTypeInfo)
 
 // validateScalarValue validates a scalar value against the node's data type
 func (c *Client) validateScalarValue(value interface{}, typeInfo *NodeTypeInfo) error {
+	// Per the OPC-UA spec, every builtin DataType lives in namespace 0. A
+	// non-zero namespace means this is a custom/vendor DataType - its
+	// numeric ID is meaningless to compare against the builtin ua.TypeIDXxx
+	// constants below, since a custom type's ID can coincidentally collide
+	// with one of them (e.g. ns=2;i=6 colliding with Int32=6) and would
+	// otherwise be silently misvalidated as that builtin type.
+	if typeInfo.DataType.Namespace() != 0 {
+		return fmt.Errorf("cannot validate custom DataType ns=%d;i=%d for write: only builtin (namespace 0) scalar/array types are supported by opcua_write", typeInfo.DataType.Namespace(), typeInfo.DataType.IntID())
+	}
+
 	// Get the data type identifier
 	dataTypeID := typeInfo.DataType.IntID()
 
@@ -1051,8 +1124,12 @@ func (c *Client) validateArrayValue(value interface{}, typeInfo *NodeTypeInfo) e
 		return fmt.Errorf("expected array value, got %T", value)
 	}
 
-	// Validate array dimensions if specified
-	if len(typeInfo.ArrayDimensions) > 0 {
+	// Validate array dimensions if specified. Per the OPC-UA spec (Part 3,
+	// ArrayDimensions), a dimension value of 0 means that dimension is
+	// unconstrained/variable-length, not "must contain exactly 0
+	// elements" - confirmed live against the real test server, whose
+	// sample array nodes report ArrayDimensions [0] yet accept any length.
+	if len(typeInfo.ArrayDimensions) > 0 && typeInfo.ArrayDimensions[0] != 0 {
 		expectedLength := int(typeInfo.ArrayDimensions[0])
 		if len(valueSlice) != expectedLength {
 			return fmt.Errorf("expected array length %d, got %d", expectedLength, len(valueSlice))
@@ -1185,20 +1262,26 @@ func (c *Client) writeWithBasicConversion(ctx context.Context, client opcuaClien
 
 // convertValueToOPCUAType converts a value to the proper OPC-UA type based on node type information
 func (c *Client) convertValueToOPCUAType(value interface{}, typeInfo *NodeTypeInfo) (interface{}, error) {
-	// Get the data type identifier
-	dataTypeID := typeInfo.DataType.IntID()
-
 	// Handle arrays
 	if typeInfo.IsArray {
-		return c.convertArrayValue(value, typeInfo, dataTypeID)
+		return c.convertArrayValue(value, typeInfo, typeInfo.DataType.IntID())
 	}
 
 	// Handle scalar values
-	return c.convertScalarValue(value, dataTypeID)
+	return c.convertScalarValue(value, typeInfo)
 }
 
-// convertScalarValue converts a scalar value to the proper OPC-UA type
-func (c *Client) convertScalarValue(value interface{}, dataTypeID uint32) (interface{}, error) {
+// convertScalarValue converts a scalar value to the proper OPC-UA type.
+// Takes the full typeInfo (not just the numeric DataType ID) so it can
+// reject a non-namespace-0 (custom/vendor) DataType, matching
+// validateScalarValue's namespace check - see that function's doc comment
+// for why the namespace matters.
+func (c *Client) convertScalarValue(value interface{}, typeInfo *NodeTypeInfo) (interface{}, error) {
+	if typeInfo.DataType.Namespace() != 0 {
+		return nil, fmt.Errorf("cannot convert custom DataType ns=%d;i=%d for write: only builtin (namespace 0) scalar/array types are supported by opcua_write", typeInfo.DataType.Namespace(), typeInfo.DataType.IntID())
+	}
+	dataTypeID := typeInfo.DataType.IntID()
+
 	switch dataTypeID {
 	case uint32(ua.TypeIDBoolean): // Boolean
 		return c.convertToBoolean(value)
@@ -1227,9 +1310,9 @@ func (c *Client) convertScalarValue(value interface{}, dataTypeID uint32) (inter
 	case uint32(ua.TypeIDDateTime): // DateTime
 		return c.convertToDateTime(value)
 	case uint32(ua.TypeIDGUID): // Guid
-		return c.convertToString(value) // Guid is represented as string
+		return c.convertToGUID(value)
 	case uint32(ua.TypeIDByteString): // ByteString
-		return c.convertToString(value) // ByteString is represented as string
+		return c.convertToByteString(value)
 	default:
 		// For unknown data types, return the original value
 		logger.Warn("Unknown data type, using original value", "dataTypeID", dataTypeID)
@@ -1237,7 +1320,14 @@ func (c *Client) convertScalarValue(value interface{}, dataTypeID uint32) (inter
 	}
 }
 
-// convertArrayValue converts an array value to the proper OPC-UA type
+// convertArrayValue converts an array value to the proper OPC-UA type.
+// The result must be a concretely-typed slice (e.g. []int32), not
+// []interface{} - ua.Variant.set() determines the wire element TypeID from
+// reflect.Value.Index()'s static type, which for a []interface{} slice is
+// always the interface{} type itself regardless of what's boxed inside, so
+// gopcua silently mistags the whole array as TypeIDVariant on the wire
+// (confirmed by tracing ua/variant.go's sliceDim/set/isBuiltinType) rather
+// than the correct builtin array type - producing spec-noncompliant bytes.
 func (c *Client) convertArrayValue(value interface{}, typeInfo *NodeTypeInfo, dataTypeID uint32) (interface{}, error) {
 	// Check if value is a slice/array
 	valueSlice, ok := value.([]interface{})
@@ -1245,17 +1335,67 @@ func (c *Client) convertArrayValue(value interface{}, typeInfo *NodeTypeInfo, da
 		return nil, fmt.Errorf("expected array value, got %T", value)
 	}
 
-	// Convert each element in the array
-	convertedArray := make([]interface{}, len(valueSlice))
+	if typeInfo != nil && typeInfo.DataType.Namespace() != 0 {
+		return nil, fmt.Errorf("cannot write an array of custom DataType ns=%d;i=%d: only builtin (namespace 0) scalar/array types are supported by opcua_write", typeInfo.DataType.Namespace(), dataTypeID)
+	}
+
+	elemType, ok := builtinScalarGoType(dataTypeID)
+	if !ok {
+		return nil, fmt.Errorf("cannot write an array of data type %d: only builtin scalar/array types are supported for opcua_write", dataTypeID)
+	}
+
+	convertedArray := reflect.MakeSlice(reflect.SliceOf(elemType), len(valueSlice), len(valueSlice))
 	for i, element := range valueSlice {
-		convertedElement, err := c.convertScalarValue(element, dataTypeID)
+		convertedElement, err := c.convertScalarValue(element, typeInfo)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert array element %d: %w", i, err)
 		}
-		convertedArray[i] = convertedElement
+		convertedArray.Index(i).Set(reflect.ValueOf(convertedElement))
 	}
 
-	return convertedArray, nil
+	return convertedArray.Interface(), nil
+}
+
+// builtinScalarGoType returns the concrete Go type ua.Variant.set() expects
+// on the wire for a given builtin OPC-UA scalar DataType ID - the same type
+// each convertTo* helper below returns for that ID. Used to build a
+// correctly-typed array slice even when the array is empty (so there's no
+// converted element to infer the type from).
+func builtinScalarGoType(dataTypeID uint32) (reflect.Type, bool) {
+	switch dataTypeID {
+	case uint32(ua.TypeIDBoolean):
+		return reflect.TypeOf(bool(false)), true
+	case uint32(ua.TypeIDSByte):
+		return reflect.TypeOf(int8(0)), true
+	case uint32(ua.TypeIDByte):
+		return reflect.TypeOf(uint8(0)), true
+	case uint32(ua.TypeIDInt16):
+		return reflect.TypeOf(int16(0)), true
+	case uint32(ua.TypeIDUint16):
+		return reflect.TypeOf(uint16(0)), true
+	case uint32(ua.TypeIDInt32):
+		return reflect.TypeOf(int32(0)), true
+	case uint32(ua.TypeIDUint32):
+		return reflect.TypeOf(uint32(0)), true
+	case uint32(ua.TypeIDInt64):
+		return reflect.TypeOf(int64(0)), true
+	case uint32(ua.TypeIDUint64):
+		return reflect.TypeOf(uint64(0)), true
+	case uint32(ua.TypeIDFloat):
+		return reflect.TypeOf(float32(0)), true
+	case uint32(ua.TypeIDDouble):
+		return reflect.TypeOf(float64(0)), true
+	case uint32(ua.TypeIDString):
+		return reflect.TypeOf(string("")), true
+	case uint32(ua.TypeIDDateTime):
+		return reflect.TypeOf(time.Time{}), true
+	case uint32(ua.TypeIDGUID):
+		return reflect.TypeOf((*ua.GUID)(nil)), true
+	case uint32(ua.TypeIDByteString):
+		return reflect.TypeOf([]byte(nil)), true
+	default:
+		return nil, false
+	}
 }
 
 // Type conversion helper functions
@@ -1594,6 +1734,38 @@ func (c *Client) convertToString(value interface{}) (string, error) {
 	default:
 		return fmt.Sprintf("%v", v), nil
 	}
+}
+
+// convertToGUID parses a GUID string into *ua.GUID, the type
+// ua.Variant.set() actually maps to the Guid wire TypeID - a plain string
+// (what convertToString would have returned) maps to the String wire
+// TypeID instead, silently wire-tagging the write wrong.
+func (c *Client) convertToGUID(value interface{}) (*ua.GUID, error) {
+	s, ok := value.(string)
+	if !ok {
+		return nil, fmt.Errorf("cannot convert %T to Guid, expected a string", value)
+	}
+	guid := ua.NewGUID(s)
+	if guid == nil {
+		return nil, fmt.Errorf("invalid Guid string %q, expected 16 hexadecimal bytes (e.g. 1111AAAA-22BB-33CC-44DD-55EE77FF9900)", s)
+	}
+	return guid, nil
+}
+
+// convertToByteString base64-decodes a string into []byte, the type
+// ua.Variant.set() actually maps to the ByteString wire TypeID - a plain
+// string (what convertToString would have returned) maps to the String
+// wire TypeID instead, silently wire-tagging the write wrong.
+func (c *Client) convertToByteString(value interface{}) ([]byte, error) {
+	s, ok := value.(string)
+	if !ok {
+		return nil, fmt.Errorf("cannot convert %T to ByteString, expected a base64-encoded string", value)
+	}
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64 ByteString value: %w", err)
+	}
+	return b, nil
 }
 
 func (c *Client) convertToDateTime(value interface{}) (time.Time, error) {

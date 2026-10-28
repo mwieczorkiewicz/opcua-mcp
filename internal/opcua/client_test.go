@@ -2,6 +2,8 @@ package opcua
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -454,6 +456,43 @@ func TestWritePropagatesValidationFailure(t *testing.T) {
 	}
 }
 
+// TestWriteRejectsCustomNamespaceDataType covers a namespace-blindness bug:
+// validateScalarValue/convertScalarValue used to key purely on
+// DataType.IntID(), discarding the namespace. A custom/vendor DataType
+// whose numeric ID happens to collide with a builtin ua.TypeIDXxx constant
+// (here, a fictitious ns=2 type numbered the same as Int32) used to be
+// silently misvalidated and miswritten as that builtin type. It must now be
+// rejected with a clear error instead.
+func TestWriteRejectsCustomNamespaceDataType(t *testing.T) {
+	cfg := &config.OPCUAConfig{
+		Endpoint:       "opc.tcp://localhost:4840",
+		AuthMode:       "anonymous",
+		SecurityPolicy: "None",
+		SecurityMode:   "None",
+		RequestTimeout: 30 * time.Second,
+		SessionTimeout: 60 * time.Second,
+		MaxRetries:     3,
+		RetryDelay:     1 * time.Second,
+	}
+
+	client := NewClient(cfg)
+	mock := &mockOpcuaClient{
+		readFunc: typeInfoReadFunc(ua.NewNumericNodeID(2, uint32(ua.TypeIDInt32)), writeAccessBit),
+	}
+	client.client = mock
+	client.connected = true
+
+	ctx := context.Background()
+	err := client.Write(ctx, "ns=7;i=376", float64(42))
+
+	if err == nil {
+		t.Fatal("Write() to a custom-namespace DataType expected an error, got nil")
+	}
+	if mock.writeCalls != 0 {
+		t.Errorf("Write() issued %d Write RPC(s) for a rejected custom DataType, want 0", mock.writeCalls)
+	}
+}
+
 // TestReadReturnsPerNodePartialResults covers P1-1 (findings.md H3, high):
 // one bad-status node in a batch must not discard the good results for
 // every other node in the same batch, and no top-level error should be
@@ -501,6 +540,63 @@ func TestReadReturnsPerNodePartialResults(t *testing.T) {
 	}
 	if results[2].Status != ua.StatusOK || results[2].Value.Value() != int32(7) {
 		t.Errorf("results[2] = %+v, want status OK / value 7", results[2])
+	}
+}
+
+// TestReadFallsBackToIndividualReadsOnBatchFailure covers a new finding
+// confirmed live against a real OPC-UA server: a single problematic node
+// (an unregistered custom DataType) can desync gopcua's wire decode for the
+// *entire* batch ReadResponse (a transport-level "unexpected EOF", not a
+// per-node bad status), which would otherwise discard every other node's
+// result in the same batch too. Read() must isolate by retrying each node
+// individually rather than propagating a single opaque top-level error.
+func TestReadFallsBackToIndividualReadsOnBatchFailure(t *testing.T) {
+	cfg := &config.OPCUAConfig{
+		Endpoint:       "opc.tcp://localhost:4840",
+		AuthMode:       "anonymous",
+		SecurityPolicy: "None",
+		SecurityMode:   "None",
+		RequestTimeout: 30 * time.Second,
+		SessionTimeout: 60 * time.Second,
+		MaxRetries:     3,
+		RetryDelay:     1 * time.Second,
+	}
+
+	client := NewClient(cfg)
+	mock := &mockOpcuaClient{
+		readFunc: func(ctx context.Context, req *ua.ReadRequest) (*ua.ReadResponse, error) {
+			if len(req.NodesToRead) > 1 {
+				return nil, errors.New("unexpected EOF")
+			}
+			id := req.NodesToRead[0].NodeID.String()
+			if id == "ns=7;i=376" {
+				return nil, errors.New("unexpected EOF")
+			}
+			return &ua.ReadResponse{
+				Results: []*ua.DataValue{
+					{Status: ua.StatusOK, Value: ua.MustVariant(int32(42))},
+				},
+			}, nil
+		},
+	}
+	client.client = mock
+	client.connected = true
+
+	results, err := client.Read(context.Background(), []string{"i=1", "ns=7;i=376", "i=3"})
+	if err != nil {
+		t.Fatalf("Read() unexpected top-level error after batch-failure fallback: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("Read() returned %d results, want 3 (one per requested node)", len(results))
+	}
+	if results[0].Status != ua.StatusOK || results[0].Value.Value() != int32(42) {
+		t.Errorf("results[0] = %+v, want status OK / value 42 (recovered via individual read)", results[0])
+	}
+	if results[1].Status != ua.StatusBadDecodingError {
+		t.Errorf("results[1].Status = %v, want StatusBadDecodingError (still fails even in isolation)", results[1].Status)
+	}
+	if results[2].Status != ua.StatusOK || results[2].Value.Value() != int32(42) {
+		t.Errorf("results[2] = %+v, want status OK / value 42 (recovered via individual read)", results[2])
 	}
 }
 
@@ -840,5 +936,110 @@ func TestParseNodeIDs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestConvertArrayValueProducesWireCorrectType covers a newly-found bug
+// (not the same as findings.md's items): convertArrayValue used to return
+// []interface{}, which ua.Variant.set() cannot map to the correct element
+// TypeID (it silently mistags the whole array as TypeIDVariant instead),
+// producing spec-noncompliant wire bytes for every array write. The fix
+// repacks into a concretely-typed slice; this asserts the resulting
+// ua.Variant reports the correct array TypeID, including the empty-array
+// case where there's no converted element to infer the type from.
+func TestConvertArrayValueProducesWireCorrectType(t *testing.T) {
+	c := &Client{}
+	tests := []struct {
+		name       string
+		dataTypeID uint32
+		values     []interface{}
+		wantType   ua.TypeID
+	}{
+		{"Int32 non-empty", uint32(ua.TypeIDInt32), []interface{}{float64(1), float64(2), float64(3)}, ua.TypeIDInt32},
+		{"Int32 empty", uint32(ua.TypeIDInt32), []interface{}{}, ua.TypeIDInt32},
+		{"Double non-empty", uint32(ua.TypeIDDouble), []interface{}{1.5, 2.5}, ua.TypeIDDouble},
+		{"Boolean non-empty", uint32(ua.TypeIDBoolean), []interface{}{true, false}, ua.TypeIDBoolean},
+		{"String non-empty", uint32(ua.TypeIDString), []interface{}{"a", "b"}, ua.TypeIDString},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			typeInfo := &NodeTypeInfo{DataType: ua.NewNumericNodeID(0, tt.dataTypeID)}
+			converted, err := c.convertArrayValue(tt.values, typeInfo, tt.dataTypeID)
+			if err != nil {
+				t.Fatalf("convertArrayValue() error: %v", err)
+			}
+			variant, err := ua.NewVariant(converted)
+			if err != nil {
+				t.Fatalf("ua.NewVariant(%#v) error: %v", converted, err)
+			}
+			if variant.Type() == ua.TypeIDVariant {
+				t.Errorf("ua.NewVariant(%#v).Type() = TypeIDVariant, want %v (array wire-mistagged, same bug as []interface{})", converted, tt.wantType)
+			}
+			if variant.Type() != tt.wantType {
+				t.Errorf("ua.NewVariant(%#v).Type() = %v, want %v", converted, variant.Type(), tt.wantType)
+			}
+		})
+	}
+}
+
+// TestConvertArrayValueRejectsUnknownDataType covers the case a custom/
+// non-builtin DataType can't be array-converted at all (no schema to build
+// a typed slice from) - it must fail clearly rather than falling through to
+// a []interface{} that would hit the same wire-mistagging bug.
+func TestConvertArrayValueRejectsUnknownDataType(t *testing.T) {
+	c := &Client{}
+	_, err := c.convertArrayValue([]interface{}{float64(1)}, nil, 99999)
+	if err == nil {
+		t.Error("convertArrayValue() with an unknown data type expected an error, got nil")
+	}
+}
+
+// TestConvertToGUIDProducesWireCorrectType covers an adjacent bug found in
+// the same code: convertScalarValue's Guid case used to return a plain Go
+// string, which ua.Variant.set() maps to TypeIDString, not TypeIDGUID -
+// silently wire-tagging Guid writes wrong too.
+func TestConvertToGUIDProducesWireCorrectType(t *testing.T) {
+	c := &Client{}
+	converted, err := c.convertToGUID("1111AAAA-22BB-33CC-44DD-55EE77FF9900")
+	if err != nil {
+		t.Fatalf("convertToGUID() error: %v", err)
+	}
+	variant, err := ua.NewVariant(converted)
+	if err != nil {
+		t.Fatalf("ua.NewVariant(%#v) error: %v", converted, err)
+	}
+	if variant.Type() != ua.TypeIDGUID {
+		t.Errorf("ua.NewVariant(convertToGUID(...)).Type() = %v, want TypeIDGUID", variant.Type())
+	}
+}
+
+func TestConvertToGUIDRejectsInvalidString(t *testing.T) {
+	c := &Client{}
+	if _, err := c.convertToGUID("not-a-guid"); err == nil {
+		t.Error("convertToGUID(\"not-a-guid\") expected an error, got nil")
+	}
+}
+
+// TestConvertToByteStringProducesWireCorrectType is the ByteString
+// counterpart of TestConvertToGUIDProducesWireCorrectType.
+func TestConvertToByteStringProducesWireCorrectType(t *testing.T) {
+	c := &Client{}
+	converted, err := c.convertToByteString(base64.StdEncoding.EncodeToString([]byte{1, 2, 3}))
+	if err != nil {
+		t.Fatalf("convertToByteString() error: %v", err)
+	}
+	variant, err := ua.NewVariant(converted)
+	if err != nil {
+		t.Fatalf("ua.NewVariant(%#v) error: %v", converted, err)
+	}
+	if variant.Type() != ua.TypeIDByteString {
+		t.Errorf("ua.NewVariant(convertToByteString(...)).Type() = %v, want TypeIDByteString", variant.Type())
+	}
+}
+
+func TestConvertToByteStringRejectsInvalidBase64(t *testing.T) {
+	c := &Client{}
+	if _, err := c.convertToByteString("not-valid-base64!!!"); err == nil {
+		t.Error("convertToByteString(\"not-valid-base64!!!\") expected an error, got nil")
 	}
 }

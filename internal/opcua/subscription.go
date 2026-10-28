@@ -382,7 +382,7 @@ func (s *SubscriptionManager) handleNotification(notif *opcua.PublishNotificatio
 			continue
 		}
 		batch[nodeID] = store.ValueEntry{
-			Value:           item.Value.Value.Value(),
+			Value:           NormalizeReadValue(item.Value.Value.Value()),
 			Status:          item.Value.Status.Error(),
 			SourceTimestamp: item.Value.SourceTimestamp,
 			ServerTimestamp: item.Value.ServerTimestamp,
