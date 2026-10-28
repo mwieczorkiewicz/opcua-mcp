@@ -3,7 +3,7 @@
   "name": "io.github.mwieczorkiewicz/opcua-mcp",
   "title": "OPC-UA MCP Server",
   "description": "Read, write, browse, search, and subscribe to live data on an OPC-UA industrial automation server.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "websiteUrl": "https://github.com/mwieczorkiewicz/opcua-mcp",
   "repository": {
     "url": "https://github.com/mwieczorkiewicz/opcua-mcp",
@@ -12,7 +12,7 @@
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/mwieczorkiewicz/opcua-mcp:main-29734c4",
+      "identifier": "ghcr.io/mwieczorkiewicz/opcua-mcp:main-b36e570",
       "transport": {
         "type": "stdio"
       },
