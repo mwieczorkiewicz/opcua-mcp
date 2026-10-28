@@ -257,6 +257,18 @@ commit message format.
   `opcua_write`, `opcua_disconnect`, `opcua_subscribe` and
   `opcua_unsubscribe`; `MCP_ALLOWED_TOOLS` re-enables named tools. Off by
   default, so existing setups see all 18 tools as before.
+- **New: automatic recovery from a dead OPC-UA session.** When the server
+  rejects a request with `BadSessionIDInvalid` or `BadServerNotConnected`
+  (for example after the server restarted or dropped the session), the
+  client reconnects once with the same security settings and retries reads
+  once. Writes are not replayed: they return an error saying the write was
+  not applied, and the next call uses the new session. Subscriptions are
+  restored after the reconnect.
+- **Changed: `opcua_connect` verifies the connection.** When already
+  connected it now probes the server and rebuilds the session if it is no
+  longer usable, instead of only reporting "Already connected".
+- **Fixed: `opcua_disconnect` stays disconnected.** Disconnecting no longer
+  makes the subscription reconnect watcher bring the connection back.
 
 ## Contributing
 
