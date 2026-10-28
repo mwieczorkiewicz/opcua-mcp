@@ -12,9 +12,14 @@ type mockSubscribingClient struct {
 	connectFunc   func(ctx context.Context) error
 	subscribeFunc func(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (SubscriptionHandle, error)
 
-	connectCalls   int
-	subscribeCalls int
-	stateCh        chan<- opcua.ConnState
+	connectCalls     int
+	subscribeCalls   int
+	stateCh          chan<- opcua.ConnState
+	reconnectHandler func(context.Context)
+}
+
+func (m *mockSubscribingClient) SetReconnectHandler(fn func(context.Context)) {
+	m.reconnectHandler = fn
 }
 
 func (m *mockSubscribingClient) Connect(ctx context.Context) error {

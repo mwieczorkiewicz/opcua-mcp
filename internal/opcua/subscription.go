@@ -19,6 +19,7 @@ import (
 type subscribingClient interface {
 	Connect(ctx context.Context) error
 	SetStateChangeChannel(ch chan<- opcua.ConnState)
+	SetReconnectHandler(fn func(context.Context))
 	Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (SubscriptionHandle, error)
 }
 
@@ -130,6 +131,10 @@ func (s *SubscriptionManager) Start(ctx context.Context) error {
 	if err := s.watcher.Start(ctx); err != nil {
 		return fmt.Errorf("start reconnect watcher: %w", err)
 	}
+	// Session recovery replaces the connection in place (Client
+	// .recoverConnection), killing every gopcua Subscription on it the same
+	// way a permanent death does, so it rebuilds them the same way.
+	s.client.SetReconnectHandler(s.resubscribe)
 
 	s.wg.Add(1)
 	go s.pump(ctx)
@@ -138,6 +143,7 @@ func (s *SubscriptionManager) Start(ctx context.Context) error {
 
 // Stop stops the notification pump and the reconnect watcher, joining both.
 func (s *SubscriptionManager) Stop() error {
+	s.client.SetReconnectHandler(nil)
 	close(s.stopCh)
 	s.wg.Wait()
 	return s.watcher.Stop()
@@ -170,7 +176,21 @@ func (s *SubscriptionManager) rebuild(ctx context.Context) error {
 	if err := s.client.Connect(ctx); err != nil {
 		return fmt.Errorf("reconnect: %w", err)
 	}
+	return s.restoreFromIntent(ctx)
+}
 
+// resubscribe is the Client's reconnect handler: session recovery already
+// replaced the connection, so only the subscriptions need restoring.
+func (s *SubscriptionManager) resubscribe(ctx context.Context) {
+	if err := s.restoreFromIntent(ctx); err != nil {
+		logger.Error("failed to restore subscriptions after session recovery", "error", err)
+	}
+}
+
+// restoreFromIntent discards in-memory subscription state (its gopcua
+// Subscriptions died with the old connection) and restores everything from
+// persisted intent.
+func (s *SubscriptionManager) restoreFromIntent(ctx context.Context) error {
 	s.mu.Lock()
 	s.subscriptions = make(map[string]*subscriptionRecord)
 	s.intervalGroups = make(map[int]*intervalGroup)

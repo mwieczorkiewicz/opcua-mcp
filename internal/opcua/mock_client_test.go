@@ -2,6 +2,7 @@ package opcua
 
 import (
 	"context"
+	"sync"
 
 	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/ua"
@@ -19,6 +20,8 @@ type mockOpcuaClient struct {
 	// closeCalls counts Close() calls, to assert a retired connection is
 	// closed.
 	closeCalls int
+	// readMu guards readCalls for tests that read concurrently.
+	readMu sync.Mutex
 
 	readCalls       int
 	writeCalls      int
@@ -34,7 +37,9 @@ func (m *mockOpcuaClient) Close(ctx context.Context) error {
 }
 
 func (m *mockOpcuaClient) Read(ctx context.Context, req *ua.ReadRequest) (*ua.ReadResponse, error) {
+	m.readMu.Lock()
 	m.readCalls++
+	m.readMu.Unlock()
 	if m.readFunc != nil {
 		return m.readFunc(ctx, req)
 	}

@@ -40,20 +40,23 @@ var _ opcuaClient = (*opcua.Client)(nil)
 
 // Client wraps the OPC-UA client with additional functionality
 type Client struct {
-	mu        sync.RWMutex
-	client    opcuaClient
-	config    *config.OPCUAConfig // immutable post-construction; not guarded by mu
-	connected bool
-	stateCh   chan<- opcua.ConnState // registered via SetStateChangeChannel; nil unless a caller (ReconnectWatcher) wants state-change notifications
+	mu          sync.RWMutex
+	client      opcuaClient
+	config      *config.OPCUAConfig // immutable post-construction; not guarded by mu
+	connected   bool
+	stateCh     chan<- opcua.ConnState // registered via SetStateChangeChannel; nil unless a caller (ReconnectWatcher) wants state-change notifications
+	onReconnect func(context.Context)  // registered via SetReconnectHandler; called after recoverConnection replaces a live connection
 
-	// connectMu serializes every connect, reconnect and disconnect.
+	// connectMu serializes every connect, reconnect and disconnect, so
+	// concurrent callers hitting the same stale session reconnect once.
 	// Never acquired while holding mu.
 	connectMu sync.Mutex
 	// connGen is bumped each time a connection is started or retired;
 	// stateForwarder drops state changes from any older generation.
 	connGen atomic.Uint64
 	// clientGen is the generation of client (guarded by mu, set together
-	// with it).
+	// with it), so recoverConnection can tell whether the connection a
+	// caller failed on has already been replaced.
 	clientGen uint64
 
 	// dial creates and connects the underlying client for a new connection
@@ -67,6 +70,13 @@ func (c *Client) snapshot() (opcuaClient, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.client, c.connected
+}
+
+// liveGen returns the generation of the current connection.
+func (c *Client) liveGen() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.clientGen
 }
 
 // NewClient creates a new OPC-UA client with the given configuration
@@ -88,9 +98,9 @@ func (c *Client) Connect(ctx context.Context) error {
 // Caller must hold connectMu.
 //
 // The previous connection stays published while the new one is dialed, so
-// concurrent callers keep using it rather than seeing a transient "not
-// connected"; it is swapped out and closed only once the new connection is
-// ready or the dial has failed.
+// concurrent callers keep failing on it (and wait in recoverConnection)
+// rather than seeing a transient "not connected"; it is swapped out and
+// closed only once the new connection is ready or the dial has failed.
 func (c *Client) connectLocked(ctx context.Context) error {
 	gen := c.connGen.Add(1)
 
@@ -275,9 +285,8 @@ func (c *Client) Subscribe(ctx context.Context, params *opcua.SubscriptionParame
 }
 
 // Disconnect closes the connection to the OPC-UA server. The connection is
-// retired first, so ReconnectWatcher doesn't read the Closed state that
-// Close() emits as a permanent death and bring the connection back: a
-// user-initiated disconnect stays disconnected.
+// retired first, so neither session recovery nor ReconnectWatcher brings it
+// back: a user-initiated disconnect stays disconnected.
 func (c *Client) Disconnect(ctx context.Context) error {
 	c.connectMu.Lock()
 	defer c.connectMu.Unlock()
@@ -376,8 +385,8 @@ func ParseNodeIDs(input string) ([]string, error) {
 	return []string{input}, nil
 }
 
-// Read reads values from the specified node IDs
-func (c *Client) Read(ctx context.Context, nodeIDs []string) ([]*ua.DataValue, error) {
+// read reads values from the specified node IDs
+func (c *Client) read(ctx context.Context, nodeIDs []string) ([]*ua.DataValue, error) {
 	client, connected := c.snapshot()
 	if !connected || client == nil {
 		return nil, fmt.Errorf("client is not connected")
@@ -417,7 +426,10 @@ func (c *Client) Read(ctx context.Context, nodeIDs []string) ([]*ua.DataValue, e
 		// not just that one node's status going Bad. Isolate by retrying
 		// each node individually so the rest of the batch isn't lost too;
 		// the connection itself recovers for the very next call regardless.
-		if len(ids) > 1 {
+		// A stale session fails every node the same way; return it so
+		// withSessionRecovery can reconnect instead of masking it as
+		// per-node bad statuses.
+		if len(ids) > 1 && !isStaleSessionError(err) {
 			return c.readIndividually(ctx, client, ids, nodeIDs), nil
 		}
 		return nil, fmt.Errorf("failed to read from OPC-UA server: %w", err)
@@ -483,8 +495,7 @@ func (c *Client) readIndividually(ctx context.Context, client opcuaClient, ids [
 
 // Write writes values to the specified node IDs with intelligent type conversion
 func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) error {
-	client, connected := c.snapshot()
-	if !connected || client == nil {
+	if !c.IsConnected() {
 		return fmt.Errorf("client is not connected")
 	}
 
@@ -499,7 +510,7 @@ func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) er
 	if err != nil {
 		// If we can't get type info, fall back to basic conversion
 		logger.Warn("Failed to get node type information, using basic conversion", "error", err)
-		return c.writeWithBasicConversion(ctx, client, id, nodeID, value)
+		return c.writeWithBasicConversion(ctx, id, nodeID, value)
 	}
 
 	// Validate value against node's data type before attempting to write. An
@@ -535,22 +546,11 @@ func (c *Client) Write(ctx context.Context, nodeID string, value interface{}) er
 		},
 	}
 
-	// Send write request
-	resp, err := client.Write(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to write to OPC-UA server: %w", err)
-	}
-
-	// Check for errors in response
-	if len(resp.Results) > 0 && resp.Results[0] != ua.StatusOK {
-		return fmt.Errorf("write failed for node %s: %s", nodeID, resp.Results[0])
-	}
-
-	return nil
+	return c.sendWrite(ctx, req, nodeID)
 }
 
-// Browse browses the node hierarchy starting from the specified node
-func (c *Client) Browse(ctx context.Context, nodeID string) ([]*ua.ReferenceDescription, error) {
+// browse browses the node hierarchy starting from the specified node
+func (c *Client) browse(ctx context.Context, nodeID string) ([]*ua.ReferenceDescription, error) {
 	client, connected := c.snapshot()
 	if !connected || client == nil {
 		return nil, fmt.Errorf("client is not connected")
@@ -635,8 +635,8 @@ func (c *Client) Browse(ctx context.Context, nodeID string) ([]*ua.ReferenceDesc
 // never returns an empty ContinuationPoint can't cause an unbounded loop.
 const maxBrowseNextIterations = 10000
 
-// GetNodeClass returns the node class of the specified node
-func (c *Client) GetNodeClass(ctx context.Context, nodeID string) (ua.NodeClass, error) {
+// getNodeClass returns the node class of the specified node
+func (c *Client) getNodeClass(ctx context.Context, nodeID string) (ua.NodeClass, error) {
 	client, connected := c.snapshot()
 	if !connected || client == nil {
 		return 0, fmt.Errorf("client is not connected")
@@ -695,8 +695,8 @@ func decodeNodeClass(raw interface{}) (ua.NodeClass, error) {
 	return ua.NodeClass(uint32(v)), nil
 }
 
-// GetNodeDataType returns the data type information for a variable node
-func (c *Client) GetNodeDataType(ctx context.Context, nodeID string) (*ua.NodeID, error) {
+// getNodeDataType returns the data type information for a variable node
+func (c *Client) getNodeDataType(ctx context.Context, nodeID string) (*ua.NodeID, error) {
 	client, connected := c.snapshot()
 	if !connected || client == nil {
 		return nil, fmt.Errorf("client is not connected")
@@ -744,8 +744,8 @@ func (c *Client) GetNodeDataType(ctx context.Context, nodeID string) (*ua.NodeID
 	return dataType, nil
 }
 
-// GetNodeValueRank returns the value rank information for a variable node
-func (c *Client) GetNodeValueRank(ctx context.Context, nodeID string) (int32, error) {
+// getNodeValueRank returns the value rank information for a variable node
+func (c *Client) getNodeValueRank(ctx context.Context, nodeID string) (int32, error) {
 	client, connected := c.snapshot()
 	if !connected || client == nil {
 		return 0, fmt.Errorf("client is not connected")
@@ -793,8 +793,8 @@ func (c *Client) GetNodeValueRank(ctx context.Context, nodeID string) (int32, er
 	return valueRank, nil
 }
 
-// GetNodeArrayDimensions returns the array dimensions for a variable node
-func (c *Client) GetNodeArrayDimensions(ctx context.Context, nodeID string) ([]uint32, error) {
+// getNodeArrayDimensions returns the array dimensions for a variable node
+func (c *Client) getNodeArrayDimensions(ctx context.Context, nodeID string) ([]uint32, error) {
 	client, connected := c.snapshot()
 	if !connected || client == nil {
 		return nil, fmt.Errorf("client is not connected")
@@ -843,8 +843,8 @@ func (c *Client) GetNodeArrayDimensions(ctx context.Context, nodeID string) ([]u
 	return arrayDimensions, nil
 }
 
-// GetNodeAccessLevel returns the access level for a variable node
-func (c *Client) GetNodeAccessLevel(ctx context.Context, nodeID string) (byte, error) {
+// getNodeAccessLevel returns the access level for a variable node
+func (c *Client) getNodeAccessLevel(ctx context.Context, nodeID string) (byte, error) {
 	client, connected := c.snapshot()
 	if !connected || client == nil {
 		return 0, fmt.Errorf("client is not connected")
@@ -892,8 +892,8 @@ func (c *Client) GetNodeAccessLevel(ctx context.Context, nodeID string) (byte, e
 	return accessLevel, nil
 }
 
-// GetNodeUserAccessLevel returns the user access level for a variable node
-func (c *Client) GetNodeUserAccessLevel(ctx context.Context, nodeID string) (byte, error) {
+// getNodeUserAccessLevel returns the user access level for a variable node
+func (c *Client) getNodeUserAccessLevel(ctx context.Context, nodeID string) (byte, error) {
 	client, connected := c.snapshot()
 	if !connected || client == nil {
 		return 0, fmt.Errorf("client is not connected")
@@ -1327,7 +1327,7 @@ func (c *Client) isNonNegative(value interface{}) bool {
 }
 
 // writeWithBasicConversion performs a write operation using basic type conversion (fallback)
-func (c *Client) writeWithBasicConversion(ctx context.Context, client opcuaClient, id *ua.NodeID, nodeID string, value interface{}) error {
+func (c *Client) writeWithBasicConversion(ctx context.Context, id *ua.NodeID, nodeID string, value interface{}) error {
 	// Convert value to ua.Variant using basic conversion
 	variant, err := ua.NewVariant(value)
 	if err != nil {
@@ -1348,18 +1348,7 @@ func (c *Client) writeWithBasicConversion(ctx context.Context, client opcuaClien
 		},
 	}
 
-	// Send write request
-	resp, err := client.Write(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to write to OPC-UA server: %w", err)
-	}
-
-	// Check for errors in response
-	if len(resp.Results) > 0 && resp.Results[0] != ua.StatusOK {
-		return fmt.Errorf("write failed for node %s: %s", nodeID, resp.Results[0])
-	}
-
-	return nil
+	return c.sendWrite(ctx, req, nodeID)
 }
 
 // convertValueToOPCUAType converts a value to the proper OPC-UA type based on node type information
