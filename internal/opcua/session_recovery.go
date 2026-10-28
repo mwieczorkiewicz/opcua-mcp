@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/ua"
 	"github.com/mwieczorkiewicz/opcua-mcp/internal/logger"
 )
@@ -157,6 +158,76 @@ func (c *Client) sendWrite(ctx context.Context, req *ua.WriteRequest, nodeID str
 
 	if len(resp.Results) > 0 && resp.Results[0] != ua.StatusOK {
 		return fmt.Errorf("write failed for node %s: %s", nodeID, resp.Results[0])
+	}
+	return nil
+}
+
+// ConnectOutcome reports what EnsureConnected had to do.
+type ConnectOutcome int
+
+const (
+	// ConnectOutcomeAlreadyHealthy means the existing connection passed the
+	// health check and was kept.
+	ConnectOutcomeAlreadyHealthy ConnectOutcome = iota
+	// ConnectOutcomeConnected means there was no connection and a new one
+	// was established.
+	ConnectOutcomeConnected
+	// ConnectOutcomeReconnected means the existing connection failed the
+	// health check and was rebuilt.
+	ConnectOutcomeReconnected
+)
+
+// serverStatusStateNodeID is Server_ServerStatus_State, read by the health
+// probe: cheap, always present, and requires a valid session.
+var serverStatusStateNodeID = ua.NewNumericNodeID(0, 2259)
+
+// EnsureConnected makes sure the client has a usable connection. If it
+// isn't connected, it connects. If it believes it is connected, it checks
+// gopcua's connection state and then probes the server with a live read;
+// if either fails, the connection is rebuilt with the configured security
+// options.
+func (c *Client) EnsureConnected(ctx context.Context) (ConnectOutcome, error) {
+	gen := c.liveGen()
+	client, connected := c.snapshot()
+	if !connected || client == nil {
+		if err := c.Connect(ctx); err != nil {
+			return ConnectOutcomeConnected, err
+		}
+		return ConnectOutcomeConnected, nil
+	}
+
+	reason := c.probe(ctx, client)
+	if reason == nil {
+		return ConnectOutcomeAlreadyHealthy, nil
+	}
+	logger.Warn("OPC-UA connection failed health check, reconnecting", "reason", reason)
+	if err := c.recoverConnection(ctx, gen, "health check"); err != nil {
+		return ConnectOutcomeReconnected, err
+	}
+	return ConnectOutcomeReconnected, nil
+}
+
+// probe returns nil if client reports itself Connected and a read of the
+// server status node succeeds within the request timeout.
+func (c *Client) probe(ctx context.Context, client opcuaClient) error {
+	if state := client.State(); state != opcua.Connected {
+		return fmt.Errorf("connection state is %v", state)
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, c.requestTimeout())
+	defer cancel()
+	resp, err := client.Read(probeCtx, &ua.ReadRequest{
+		TimestampsToReturn: ua.TimestampsToReturnNeither,
+		NodesToRead:        []*ua.ReadValueID{{NodeID: serverStatusStateNodeID, AttributeID: ua.AttributeIDValue}},
+	})
+	if err != nil {
+		return fmt.Errorf("probe read failed: %w", err)
+	}
+	if len(resp.Results) == 0 {
+		return fmt.Errorf("probe read returned no results")
+	}
+	if status := resp.Results[0].Status; status != ua.StatusOK {
+		return fmt.Errorf("probe read returned %s", status)
 	}
 	return nil
 }

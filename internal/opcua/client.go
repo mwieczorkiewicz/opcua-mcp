@@ -32,6 +32,7 @@ type opcuaClient interface {
 	Browse(ctx context.Context, req *ua.BrowseRequest) (*ua.BrowseResponse, error)
 	BrowseNext(ctx context.Context, req *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error)
 	Subscribe(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (*opcua.Subscription, error)
+	State() opcua.ConnState
 }
 
 // var _ opcuaClient documents (and fails to compile if broken by an upstream

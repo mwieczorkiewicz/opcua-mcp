@@ -66,6 +66,41 @@ func TestIntegrationRecoversFromServerSideSessionClose(t *testing.T) {
 	if got := dials.Load(); got != 1 {
 		t.Errorf("session recovery reconnected %d times, want 1", got)
 	}
+
+	outcome, err := c.EnsureConnected(ctx)
+	if err != nil || outcome != ConnectOutcomeAlreadyHealthy {
+		t.Errorf("EnsureConnected() after recovery = %v, %v; want AlreadyHealthy, nil", outcome, err)
+	}
+}
+
+// TestIntegrationEnsureConnectedRebuildsInvalidSession covers opcua_connect's
+// health check against a real server: with the session closed server-side,
+// the connected flag is still true, but EnsureConnected must detect the dead
+// session and rebuild it.
+func TestIntegrationEnsureConnectedRebuildsInvalidSession(t *testing.T) {
+	endpoint := startOPCUATestServer(t)
+	c := newIntegrationTestClient(t, endpoint)
+	ctx := context.Background()
+
+	raw, _ := c.snapshot()
+	gc := raw.(*opcua.Client)
+	if err := gc.Send(ctx, &ua.CloseSessionRequest{DeleteSubscriptions: true}, func(ua.Response) error { return nil }); err != nil {
+		t.Fatalf("server-side CloseSession failed: %v", err)
+	}
+	if !c.IsConnected() {
+		t.Fatal("precondition: client should still believe it is connected")
+	}
+
+	outcome, err := c.EnsureConnected(ctx)
+	if err != nil {
+		t.Fatalf("EnsureConnected() error: %v", err)
+	}
+	if outcome != ConnectOutcomeReconnected {
+		t.Errorf("EnsureConnected() outcome = %v, want Reconnected", outcome)
+	}
+	if _, err := c.Read(ctx, []string{serverStartTimeNode}); err != nil {
+		t.Errorf("Read() after EnsureConnected error: %v", err)
+	}
 }
 
 // tcpProxy forwards a fixed local port to a retargetable address. Docker
@@ -178,7 +213,8 @@ func containerAddr(t *testing.T, c testcontainers.Container) string {
 // TestIntegrationRecoversAfterServerRestart restarts the server process
 // mid-session: every session the client held is gone. Once the server is
 // back, reads must work again without a manual opcua_connect, whether
-// gopcua's own reconnect or session recovery gets there first.
+// gopcua's own reconnect or session recovery gets there first, and
+// opcua_connect's health check must report a usable connection.
 func TestIntegrationRecoversAfterServerRestart(t *testing.T) {
 	container, addr := startRestartableOPCUATestServer(t)
 	proxy := newTCPProxy(t, addr)
@@ -215,6 +251,9 @@ func TestIntegrationRecoversAfterServerRestart(t *testing.T) {
 
 	if before[0].Value.Value() == after[0].Value.Value() {
 		t.Error("server StartTime unchanged, so the server did not actually restart")
+	}
+	if _, err := c.EnsureConnected(ctx); err != nil {
+		t.Errorf("EnsureConnected() after restart error: %v", err)
 	}
 	if !c.IsConnected() {
 		t.Error("client not connected after recovery")

@@ -760,17 +760,24 @@ func (s *Server) marshalResponse(response map[string]interface{}) (*mcp.CallTool
 	return mcp.NewToolResultText(string(responseJSON)), nil
 }
 
-// handleConnect handles the opcua_connect tool
+// handleConnect handles the opcua_connect tool. When the client already
+// believes it is connected, EnsureConnected verifies the session with a live
+// probe and rebuilds it if the server no longer accepts it, instead of
+// trusting the connected flag.
 func (s *Server) handleConnect(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	if s.opcuaClient.IsConnected() {
-		return mcp.NewToolResultText("Already connected to OPC-UA server"), nil
-	}
-
-	if err := s.opcuaClient.Connect(ctx); err != nil {
+	outcome, err := s.opcuaClient.EnsureConnected(ctx)
+	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to connect to OPC-UA server: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText("Successfully connected to OPC-UA server"), nil
+	switch outcome {
+	case opcua.ConnectOutcomeAlreadyHealthy:
+		return mcp.NewToolResultText("Already connected to OPC-UA server (connection verified)"), nil
+	case opcua.ConnectOutcomeReconnected:
+		return mcp.NewToolResultText("Reconnected to OPC-UA server: the previous session was no longer usable"), nil
+	default:
+		return mcp.NewToolResultText("Successfully connected to OPC-UA server"), nil
+	}
 }
 
 // handleDisconnect handles the opcua_disconnect tool

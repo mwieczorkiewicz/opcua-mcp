@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/ua"
 	"pgregory.net/rapid"
 )
@@ -164,6 +165,90 @@ func TestDisconnectIsNotRecovered(t *testing.T) {
 	}
 	if c.IsConnected() {
 		t.Error("client reconnected after a user disconnect")
+	}
+}
+
+// TestEnsureConnectedOutcomes covers SR-9.
+func TestEnsureConnectedOutcomes(t *testing.T) {
+	tests := []struct {
+		name        string
+		connected   bool
+		current     *mockOpcuaClient
+		next        []*mockOpcuaClient
+		wantOutcome ConnectOutcome
+		wantDials   int32
+		wantErr     bool
+	}{
+		{
+			name:        "healthy connection is kept",
+			connected:   true,
+			current:     &mockOpcuaClient{readFunc: okRead},
+			wantOutcome: ConnectOutcomeAlreadyHealthy,
+		},
+		{
+			name:        "gopcua state not connected is rebuilt",
+			connected:   true,
+			current:     &mockOpcuaClient{readFunc: okRead, stateFunc: func() opcua.ConnState { return opcua.Disconnected }},
+			next:        []*mockOpcuaClient{{readFunc: okRead}},
+			wantOutcome: ConnectOutcomeReconnected,
+			wantDials:   1,
+		},
+		{
+			name:        "probe rejected by server is rebuilt",
+			connected:   true,
+			current:     &mockOpcuaClient{readFunc: staleRead(ua.StatusBadSessionIDInvalid)},
+			next:        []*mockOpcuaClient{{readFunc: okRead}},
+			wantOutcome: ConnectOutcomeReconnected,
+			wantDials:   1,
+		},
+		{
+			name:      "probe returning a bad status is rebuilt",
+			connected: true,
+			current: &mockOpcuaClient{readFunc: func(ctx context.Context, req *ua.ReadRequest) (*ua.ReadResponse, error) {
+				return &ua.ReadResponse{Results: []*ua.DataValue{{Status: ua.StatusBadSessionClosed}}}, nil
+			}},
+			next:        []*mockOpcuaClient{{readFunc: okRead}},
+			wantOutcome: ConnectOutcomeReconnected,
+			wantDials:   1,
+		},
+		{
+			name:        "not connected connects",
+			connected:   false,
+			current:     &mockOpcuaClient{},
+			next:        []*mockOpcuaClient{{readFunc: okRead}},
+			wantOutcome: ConnectOutcomeConnected,
+			wantDials:   1,
+		},
+		{
+			name:        "rebuild failure is reported",
+			connected:   true,
+			current:     &mockOpcuaClient{readFunc: staleRead(ua.StatusBadServerNotConnected)},
+			wantOutcome: ConnectOutcomeReconnected,
+			wantDials:   1,
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, dials := newMockConnectedClient(t, tt.current, tt.next...)
+			if !tt.connected {
+				c.SetConnectedForTesting(false)
+			}
+			outcome, err := c.EnsureConnected(context.Background())
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("EnsureConnected() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if outcome != tt.wantOutcome {
+				t.Errorf("outcome = %v, want %v", outcome, tt.wantOutcome)
+			}
+			if got := dials.Load(); got != tt.wantDials {
+				t.Errorf("dials = %d, want %d", got, tt.wantDials)
+			}
+			if tt.wantErr && c.IsConnected() {
+				t.Error("client reports connected after a failed rebuild")
+			}
+		})
 	}
 }
 
