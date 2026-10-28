@@ -4,7 +4,7 @@
 - **Project**: opcua-mcp
 - **Project Type**: Brownfield
 - **Start Date**: 2026-08-02
-- **Current Stage**: CONSTRUCTION complete (all 3 units + Build and Test). Next phase per CLAUDE.md: OPERATIONS (currently a placeholder, no work defined yet).
+- **Current Stage**: Read-Only Mode + Stale-Session Recovery run COMPLETE (pushed to main). Custom-node bugfix pass committed as 104a989. Next AIDLC phase per CLAUDE.md: OPERATIONS (placeholder).
 
 ## Workspace State
 - **Existing Code**: Yes
@@ -23,9 +23,39 @@
 - This was driven by an ad-hoc audit (`docs/plan/{findings,plan,decisions}.md`), now removed since
   every item in it landed. This AIDLC workflow governs all work from here forward instead.
 
-## Scope for This AIDLC Run
+## Scope for This AIDLC Run (superseded - see below for current run)
 Phase 2: subscriptions (push-based OPC-UA value updates) + a persistent bbolt-backed cache,
 per the approved plan at `/Users/mikolajwieczorkiewicz/.claude/plans/lucky-hugging-blanket.md`.
+**Status: COMPLETE** (see Construction Progress below).
+
+## Scope for Current AIDLC Run - Custom-Node Read/Write Correctness Bugfix Pass
+Fixing four confirmed root causes (plus one newly-discovered severe bug) behind reports of
+null values and "cannot encode" cache errors when reading custom/complex-typed OPC-UA nodes
+(observed on the Boiler and ParkingLot sample objects), per the approved plan at
+`/Users/mikolajwieczorkiewicz/.claude/plans/i-want-you-to-lucky-candy.md` and
+`aidlc-docs/inception/requirements/requirements-custom-node-rw-fix.md`.
+**Mode**: Autonomous - user explicitly instructed to proceed following this repo's AIDLC
+workflow using sane defaults, without pausing for approval gates or questions unless a
+genuine blocker is hit. Same operating rule as "Unit 2 Approved - Autonomous Mode Enabled
+for Unit 3" below.
+Treated as a single cohesive unit (not decomposed into multiple Units Generation units) since
+all fixes touch the same overlapping value-conversion code path, not independent components.
+
+## Scope for Current AIDLC Run - Read-Only Mode + Stale-Session Recovery (started 2026-10-28)
+1. Configurable read-only mode with explicit tool allowlist: hidden from tools/list, rejected on direct tools/call.
+2. Recovery from StatusBadSessionIDInvalid / StatusBadServerNotConnected: serialized reconnect with the configured security options, one retry; opcua_connect verifies real client health.
+**Mode**: Autonomous (Q11 B). Extensions: Security, Resiliency, PBT all enabled (unchanged).
+
+### Stage Progress (this run)
+- [x] Workspace Detection - brownfield, reverse engineering artifacts reused
+- [x] Requirements Analysis - `requirements-readonly-session-recovery.md`, answers in the questions file
+- [x] User Stories - SKIP (single user type, behavior fully specified)
+- [x] Workflow Planning - `execution-plan-readonly-session-recovery.md`
+- [x] Application Design - SKIP (no new components)
+- [x] Units Generation - minimal: read-only-mode, session-recovery
+- [x] Construction: read-only-mode - functional design + code, commit bb7fef8
+- [x] Construction: session-recovery - functional design + code, commits e655086 (disconnect fix / connection lifecycle), 20ac8bf (recovery), 00f5d00 (opcua_connect health check), f88e550 (docs)
+- [x] Build and Test - `build-and-test-summary-readonly-session-recovery.md`: 312 unit tests, 11/11 integration tests
 
 ## Code Location Rules
 - **Application Code**: Workspace root (NEVER in aidlc-docs/)
@@ -87,6 +117,18 @@ are documented inline in each design doc instead. See audit.md entry
 - [x] Code Generation - CachingClient (caching_client.go + unit/PBT tests), mcp.Server integration (3 new tools, opcua_read/write/browse_nodes wired to CachingClient, shutdown ordering), cmd/opcua-mcp.go wiring (store-open degradation per BR-11), testcontainers-go integration suite (both tests run and pass against a real Docker container), Makefile test-integration target, README updates. Self-approved (autonomous mode) 2026-08-02.
 
 **Unit 3 COMPLETE. All 3 units done.**
+
+## Bugfix Pass Progress (Custom-Node Read/Write Correctness)
+- [x] Workspace Detection - brownfield, prior AIDLC artifacts present, proceeding directly to Requirements Analysis (Reverse Engineering already done)
+- [x] Requirements Analysis - `requirements-custom-node-rw-fix.md` generated from interactive AskUserQuestion answers gathered during plan mode; self-approved (autonomous mode)
+- [x] User Stories - SKIP (bug fix with clear, isolated-to-value-conversion scope, no new user-facing feature or divergent user journey)
+- [ ] Workflow Planning - execution plan is the approved plan file itself (`i-want-you-to-lucky-candy.md`); no separate execution-plan.md needed given the plan's existing step-by-step ordering
+- [x] Application Design - SKIP (no new components/services; `NormalizeReadValue` is a new function within the existing `internal/opcua` package boundary)
+- [x] Units Generation - SKIP (single cohesive unit, see rationale above)
+- [x] Construction (Functional Design / Code Generation, single unit) - complete, self-approved (autonomous mode). See audit.md "Construction Complete" entry for the full list of fixes.
+- [x] Build and Test - `go build/vet/test -race ./...` (261 tests, 0 failures, up from 194 baseline), `go build/vet -tags=integration ./...`, `gofmt -l .`/`golint ./...` clean, `go test -tags=integration ./internal/opcua/...` (6/6 new integration tests pass against a real Docker container). Self-approved (autonomous mode) 2026-08-05.
+
+**Bugfix pass COMPLETE.**
 
 ## Units (see unit-of-work.md for full detail)
 1. **Persistent Store** (`internal/store`) - no new dependencies, foundational

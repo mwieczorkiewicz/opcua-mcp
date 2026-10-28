@@ -367,3 +367,151 @@
 **Context**: Build and Test stage complete - CONSTRUCTION phase now fully done for Phase 2 (Units 1, 2, 3 + Build and Test). Next AIDLC phase is OPERATIONS, currently a placeholder per CLAUDE.md with no defined workflow.
 
 ---
+
+## New Bugfix Pass Requested - Custom-Node Read/Write Correctness
+**Timestamp**: 2026-08-05T00:00:00Z
+**User Input**: "I want you to test custom nodes get value/set value - there are some problems when I run it against OPCUA server that some items cant be read/marshalled for whatever reason. consider @CLAUDE.md and use available tools when proposing changes after comprehensive code analysis"
+**AI Response**: Entered plan mode. Launched 2 parallel Explore agents (read path, write path), then verified their claims directly against this repo's source and the vendored `gopcua/opcua@v0.9.0` source (not just trusting agent reports). Confirmed 4 root causes: (1) ExtensionObject data loss for unregistered custom/vendor DataTypes reads as null; (2) array/typed-value caching failures in `store/value_encoding.go`; (3) a single NaN/Inf value fails an entire `opcua_read` batch's JSON marshal; (4) namespace-blind write type dispatch in `validateScalarValue`/`convertScalarValue`. Asked 3 clarifying questions via AskUserQuestion (observed symptoms, live-server vs mock testing, fix scope).
+**Context**: Plan mode, Phase 1 (Explore) and manual source verification.
+
+---
+
+## Clarifying Answers Received
+**Timestamp**: 2026-08-05T00:05:00Z
+**User Input**: "null values, cannot encode i think also - mostly on reads. ideally run the test server and debug it on your own" / "You can refer to compose to get that kind of simulated server and do actual tests." / "Fix all four issues (Recommended)"
+**AI Response**: Confirmed `docker-compose.yml` pins `mcr.microsoft.com/iot/opc-ua-test-server:2.8` with a `compose-up-server` Makefile target and an existing `subscription_integration_test.go` testcontainers-go pattern to follow for live testing. Proceeded to design the fix.
+**Context**: Plan mode, requirements gathering.
+
+---
+
+## Mid-Turn Hint - Boiler and ParkingLot
+**Timestamp**: 2026-08-05T00:10:00Z
+**User Input**: "as a tip - i believe it was during trying to read some values from parkinglot object and boilers, some worked flawlessly"
+**AI Response**: Noted as the primary live-test repro target - both are OPC Foundation reference-server sample objects with custom/vendor DataTypes in non-zero namespaces, consistent with the ExtensionObject/namespace-blindness root causes already identified.
+**Context**: Plan mode, requirements gathering.
+
+---
+
+## Design Verification and Plan Agent Stress-Test
+**Timestamp**: 2026-08-05T00:20:00Z
+**User Input**: (none - continued plan-mode research)
+**AI Response**: Read the actual vendored gopcua source (`ua/extension_object.go`, `ua/variant.go`, `ua/node_id.go`, `ua/qualified_name.go`, `ua/datatypes.go`) directly rather than trusting agent summaries, and discovered a fifth, previously-unreported bug: `convertArrayValue` returns `[]interface{}`, which gopcua's `Variant.set()`/`sliceDim()`/`isBuiltinType()` cannot correctly type-tag (silently mistags as `TypeIDVariant` due to `isBuiltinType`'s nil-passthrough special case on a `[]interface{}`'s zero interface{} element), producing spec-noncompliant wire bytes for every array write today. Ran a Plan agent to stress-test the full design against this finding plus the original four; it confirmed the array-write bug, found an adjacent Guid/ByteString scalar wire-tagging bug, corrected the ExtensionObject framing (gopcua auto-registers 308 namespace-0 types via `register_extobjs_gen.go`, verified by direct grep - only vendor/custom-namespace types are the real gap), flagged a `convertScalarValue` signature change needed for the namespace fix, and produced an ordered, test-first implementation plan. Wrote the final plan to `/Users/mikolajwieczorkiewicz/.claude/plans/i-want-you-to-lucky-candy.md`.
+**Context**: Plan mode, Phase 2 (Design) and Phase 4 (Final Plan).
+
+---
+
+## Plan Approved, Autonomous Mode Instructed
+**Timestamp**: 2026-08-05T00:25:00Z
+**User Input**: "Yes, start with the plan but consider @CLAUDE.md workflow, continue in auto-mode and use sane defaults instead of asking questions - unless you have a hard blocker that requires human intervention."
+**AI Response**: Exiting plan mode. Proceeding per this repo's AIDLC workflow: Reverse Engineering already done (skip), writing a lean `requirements-custom-node-rw-fix.md` from the already-gathered AskUserQuestion answers (no new question cycle needed), skipping User Stories (bug fix, clear isolated scope) and Application Design (no new components), treating this as a single cohesive Unit given all fixes share one code path (skip Units Generation), then proceeding directly into Construction. Self-approving each stage transition per the same autonomous-mode precedent set in "Unit 2 Approved - Autonomous Mode Enabled for Unit 3" above, escalating only for a genuine blocker.
+**Context**: Transition from plan mode to autonomous execution of the bugfix pass.
+
+---
+
+## Live Reproduction - New Severe Finding: Batch-Corrupting Decode Failure
+**Timestamp**: 2026-08-05T00:40:00Z
+**User Input**: (none - autonomous mode, live investigation per plan)
+**AI Response**: Ran `make compose-up-server`-equivalent (full stack was already up) and wrote a throwaway debug tool (`cmd/debugtool/`, not part of the shipped fix, deleted before completion) using `internal/opcua.Client` directly to browse and read the real Microsoft OPC-UA test server. Confirmed root cause 4's namespace-collision risk is real (Boilers ns=4/ns=21 both present as expected). More importantly, found a NEW, more severe issue while probing ParkingLot (ns=7): `PrimaryVehicle` (ns=7;i=376, scalar, DataType ns=6;i=314 - a custom type in the `http://opcfoundation.org/UA/Vehicles/Types` namespace) and `OwnedVehicles` (ns=7;i=377, same DataType, array) both fail `Client.Read` with a **top-level transport error** (`unexpected EOF`), not a per-node bad status. Confirmed via isolated single-node reads (reproducible on a fresh connection every time) and a mixed-batch read (`ns=7;i=380` + `ns=7;i=376` + `i=2258`): when the bad node is included in a batch, the ENTIRE batch's result is lost, including two otherwise-perfectly-good nodes, because gopcua fails to decode the whole `ReadResponse` message once it hits this custom type's value. Confirmed the connection self-heals for the very next call (no reconnect needed) via a bad-read-then-good-read test in the same session. This is a more severe version of root cause 1 (not just "reads as null", but "can take down every other node's result in the same batch") and happens at the wire-decode layer, before any of the planned `NormalizeReadValue` normalization code would ever see a value - so the original design doesn't cover it.
+**AI Response (continued)**: Adding a scoped mitigation to the plan: `Client.Read` (`internal/opcua/client.go`) should fall back to reading each node individually when a multi-node batch read fails with a transport-level error, so one bad node's decode failure can't destroy the other nodes' results - synthesizing a `StatusBadDecodingError` per-node result for whichever node(s) still fail in isolation. This is implementable entirely in this repo's code (no gopcua fork needed) and directly serves FR-1/FR-3. Not attempting to fix gopcua's own decode desync for this specific custom type - that would require forking/patching the vendored dependency, a materially larger and riskier change explicitly out of scope without separate sign-off.
+**Context**: Bugfix pass, live-investigation step (plan's testing section, live-first sub-step), before Construction/Code Generation.
+
+---
+
+## Live Reproduction Complete - All Root Causes Directly Confirmed
+**Timestamp**: 2026-08-05T00:50:00Z
+**User Input**: (none - autonomous mode, live investigation per plan)
+**AI Response**: Browsed the Scalar (`ns=2;i=10159`) and Array (`ns=2;i=10243`) sample folders in addition to Boiler/ParkingLot. Direct, definitive confirmation of every root cause: `StructureValue` (`ns=2;i=10239`) decodes exactly as predicted - `*ua.ExtensionObject{EncodingMask:0x1, Value:interface{}(nil)}` (the server itself flags this specific node `StatusBadDataTypeIDUnknown`, so it's not a false-Good-status case for this particular node, but the nil-Value ExtensionObject shape is confirmed real). `DoubleValue` (`ns=2;i=10310`, array) contains live `+Inf`, `-Inf`, and multiple `NaN` values mixed into real data - directly confirming root cause 3 (batch-killing JSON marshal) and the store-encode NaN failure are both real and reachable via this exact sample node, not just a theoretical edge case. Every array-typed node (`BooleanValue`, `Int32Value`, `DoubleValue`, `StringValue`, etc.) confirmed decoding to concretely-typed Go slices (`[]bool`, `[]int32`, `[]float64`, `[]string`) exactly as predicted, confirming root cause 2. Boiler's `EURange`/Condition-related fields showing bare Go `<nil>` were confirmed to be legitimate null Variants (uninitialized optional fields, e.g. unfired alarm conditions) rather than a decode bug - these should stay JSON `null`, which is honest, not a symptom to fix. Deleting the throwaway `cmd/debugtool/` before finishing this pass (investigation-only, not part of the shipped fix). Proceeding to Construction/Code Generation with all 4 original root causes plus the new batch-corruption finding fully verified against the real server.
+**Context**: Bugfix pass, live-investigation step complete. Proceeding to Construction.
+
+---
+
+## Construction Complete (self-approved, autonomous mode)
+**Timestamp**: 2026-08-05T02:00:00Z
+**User Input**: (none - autonomous mode)
+**AI Response**: Implemented all fixes, test-first throughout, verifying against both the mock seam and the live test server after each change:
+1. `internal/opcua/value_convert.go` (new) - `NormalizeReadValue`, a reflection-based generic normalizer handling typed slices (1-D and nested), `*ua.NodeID`/`*ua.ExpandedNodeID`/`*ua.GUID` (`.String()`), `*ua.QualifiedName`/`*ua.LocalizedText` (`.Name`/`.Text`), `ua.StatusCode` (`.Error()`), `*ua.ExtensionObject` (passthrough if decoded, else a descriptive string instead of null), and NaN/Inf floats (string form). 30 new unit tests, `value_convert_test.go`.
+2. Wired `NormalizeReadValue` into all 8 read call sites: `caching_client.go` `readLive`, `subscription.go` `handleNotification`, and 6 sites in `mcp/server.go` (handleRead, node-URI resource handler x2, handleNodeInfo, handleServerInfoFallback, handleGetValue, handleGetValueByName). Added `marshalReadResponseWithFallback`/`fixUnmarshalableValues` defense-in-depth for `handleRead` and the resource handler's multi-node branch, matching `Client.Read`'s existing "one bad node never kills the batch" guarantee at the JSON layer.
+3. Fixed `Client.Read`'s batch-corruption bug (found live, not in the original 4 root causes): added `readIndividually` fallback when a batch read fails with a transport error and >1 node was requested, isolating a decode-desyncing custom-typed node from taking down every other node's result. Discovered via live testing that an immediate retry can race gopcua's own connection teardown (spurious failures even for good nodes); added a 250ms context-aware grace period applied before the first retry and again after any individual failure, confirmed live to fully resolve the race (`TestReadFallsBackToIndividualReadsOnBatchFailure`).
+4. Fixed the array-write wire-format bug: `convertArrayValue` now repacks into a concretely-typed slice via `reflect.MakeSlice` (with a `builtinScalarGoType` lookup table for the empty-array case) instead of returning `[]interface{}`, which gopcua's `Variant.set()` silently mistagged as `TypeIDVariant`. Fixed the adjacent Guid/ByteString scalar bug the same way (`convertToGUID`/`convertToByteString` now return `*ua.GUID`/`[]byte`, not `string`). 11 new unit tests in `client_test.go`, all confirmed against `ua.NewVariant(...).Type()`.
+5. Fixed namespace-blind write dispatch: `validateScalarValue`/`convertScalarValue` (the latter's signature changed to take `*NodeTypeInfo` instead of a bare `dataTypeID`) now reject any non-namespace-0 DataType with a clear error instead of misclassifying it against a numerically-colliding builtin type. Added `DataTypeNamespace uint16` to `store.TypeInfoEntry`, threaded through `CachingClient.GetNodeTypeInfo`'s cache write and `typeInfoEntryToNodeTypeInfo`'s reconstruction (old cached entries default to namespace 0, matching prior behavior - no migration).
+6. **Bonus fix found live, outside the original scope**: `validateArrayValue`'s `ArrayDimensions[0] == 0` check was treating "unconstrained/variable length" (per OPC-UA Part 3 spec) as "must be exactly 0 elements," rejecting every array write to the sample server's own array nodes and blocking live verification of fix 4. One-line fix, confirmed live.
+All 6 live-confirmed fixes were verified directly against the real Microsoft OPC-UA test server via a throwaway `cmd/debugtool/` (deleted before completion, not part of the shipped fix) before writing the permanent integration test. Full local baseline green throughout: `go build/vet/test -race ./...` (261 tests, 0 failures, up from 194 baseline), `gofmt -l .` and `golint ./...` both clean.
+**Context**: Construction (single unit, per the autonomous scope decision) complete. Proceeding to the permanent integration test and final Build and Test verification.
+
+---
+
+## Build and Test Complete - Bugfix Pass Done (self-approved, autonomous mode)
+**Timestamp**: 2026-08-05T02:30:00Z
+**User Input**: (none - autonomous mode)
+**AI Response**: Added `internal/opcua/custom_types_integration_test.go` (`//go:build integration`, reusing `subscription_integration_test.go`'s `startOPCUATestServer`/`newIntegrationTestClient` helpers): 6 new tests covering the undecoded-ExtensionObject string fallback, NaN/Inf array JSON-safety, batch-read isolation with a real custom-namespace node, array write/read round trip, Guid write/read round trip, and custom-namespace write rejection - all against a real Docker-hosted test server, all passing. Deleted the throwaway `cmd/debugtool/` (git status confirms no trace remains). Final verification, all green: `go build ./...`, `go build -tags=integration ./...`, `go vet ./...`, `go vet -tags=integration ./...`, `gofmt -l .`, `golint ./...`, `go test -race ./...` (261 tests, 0 failures across 7 packages, up from the 194-test/8-package baseline before this pass - package count dropped by one because `cmd/debugtool` was removed), `go test -tags=integration ./internal/opcua/...` (6/6 new integration tests pass). No regressions in any pre-existing test.
+
+Summary of all fixes landed in this pass:
+1. `NormalizeReadValue` (new `internal/opcua/value_convert.go`) centralizes read-side value normalization, fixing: undecoded custom ExtensionObjects showing as misleading `null` (now a descriptive string); typed-slice/NodeID/GUID/QualifiedName/LocalizedText/StatusCode values failing to cache; and NaN/Inf floats failing JSON marshal.
+2. `Client.Read` batch-corruption isolation (`readIndividually`, with a live-discovered-and-fixed connection-teardown race requiring a 250ms grace period) - a custom-typed node's decode failure no longer destroys every other node's result in the same batch.
+3. Array writes fixed to produce spec-compliant wire bytes (`convertArrayValue` reflection-based repack) instead of being silently mistagged as `TypeIDVariant` - this bug affected every array write, not just custom types.
+4. Guid/ByteString scalar writes fixed the same way (`convertToGUID`/`convertToByteString`).
+5. Namespace-blind write validation/conversion fixed (`validateScalarValue`/`convertScalarValue` now check `DataType.Namespace()`), with `store.TypeInfoEntry`'s new `DataTypeNamespace` field keeping this correct on cache hits too.
+6. `ArrayDimensions[0] == 0` (unconstrained length per spec) no longer misread as "must be exactly 0 elements" - found live while verifying fix 3.
+
+Every fix was verified live against the real Microsoft OPC-UA test server (Boiler, ParkingLot, and the standard Scalar/Array sample folders) before being locked in as a permanent integration test, per the original request to test against a live server and debug independently rather than fixing blind.
+**Context**: Bugfix pass complete. All 7 tracked tasks done.
+
+---
+
+## Ad-hoc Fix: stdio shutdown on stdin EOF (outside custom-node-rw-fix workflow)
+**Timestamp**: 2026-10-28T12:45:00Z
+**User Input**: "implement the fix, directly on main, make sure its tested, then bump tag after CI succeeds in handoff"
+**AI Response**: "Extracted Server.shutdown() (sync.Once) and call it after the stdio listener returns on stdin EOF, so the final telemetry flush, subscription manager stop and store close run without a signal. Added internal/mcp/shutdown_test.go. Committed b36e570 directly on main and pushed; bumping server.json image tag after CI succeeds."
+**Context**: Small bug fix requested directly on main; full AIDLC stages skipped at user's direction. Preceded by verification that fresh local docker builds only carry the A-DEV placeholder Aptabase key.
+
+---
+
+## New Request - Read-Only Mode + Stale-Session Recovery
+**Timestamp**: 2026-10-28T13:00:00Z
+**User Input**: "Suggested fixes in the OPC-UA MCP repository:
+    1    Add a configurable read-only mode with an explicit allowlist. Hide disallowed tools from tools/list and reject direct tools/call attempts for them. Exclude write and method calls, disconnect, and subscription mutations unless explicitly approved. Test both discovery and direct-call denial.
+    2    Recover from StatusBadSessionIDInvalid and StatusBadServerNotConnected: detect the stale session, serialize a disconnect/reconnect using the same configured security and certificate options, then retry the affected operation once. Ensure opcua_connect checks/rebuilds actual client health rather than trusting only the boolean. Test against a server that invalidates a session after initial connection."
+**AI Response**: "Started a new AIDLC run. Displayed welcome message, ran workspace detection."
+**Context**: New AIDLC run, Workspace Detection
+
+---
+
+## Workspace Detection - Read-Only Mode + Stale-Session Recovery
+**Timestamp**: 2026-10-28T13:02:00Z
+**User Input**: (none)
+**AI Response**: "Brownfield. aidlc-state.md present; previous run (custom-node read/write bugfix) marked COMPLETE but its code is still uncommitted in the working tree. Reverse engineering artifacts exist (2026-08-02), so Reverse Engineering is skipped. Findings relevant to this request: 18 tools registered in SetupTools(), none of them an OPC-UA method-call tool; opcua_connect trusts only Client.connected; Client.Connect builds auth + channel security options inline, reusable for a reconnect; mcp-go v0.39.1 offers server.WithToolFilter for tools/list filtering. Proceeding to Requirements Analysis."
+**Context**: Workspace Detection complete
+
+---
+
+## Requirements Analysis - Questions Issued
+**Timestamp**: 2026-10-28T13:05:00Z
+**User Input**: (none)
+**AI Response**: "Created aidlc-docs/inception/requirements/requirement-verification-questions-readonly-session-recovery.md (11 questions). Awaiting answers."
+**Context**: Requirements Analysis, Step 6 gate
+
+---
+
+## Requirements Answers Received
+**Timestamp**: 2026-10-28T13:20:00Z
+**User Input**: "done"
+**AI Response**: "Read answers: Q1 A, Q2 A, Q3 A, Q4 A, Q5 A, Q6 B, Q7 A, Q8 C, Q9 A, Q10 A, Q11 B. No contradictions. Self-resolved ambiguity: MCP_ALLOWED_TOOLS without MCP_READ_ONLY logs a warning and has no effect. Q2 A (opt-in, default off) recorded as the sign-off for gating tools behind a flag. Autonomous mode for the rest of the run."
+**Context**: Requirements Analysis, gate passed
+
+---
+
+## Construction and Build and Test Complete (autonomous mode)
+**Timestamp**: 2026-10-28T15:50:00Z
+**User Input**: (none - autonomous mode)
+**AI Response**: "Committed pending custom-node bugfix (104a989). Unit read-only-mode (bb7fef8): MCP_READ_ONLY/MCP_ALLOWED_TOOLS, tool_policy.go with WithToolFilter + middleware, denials classified permission_denied, README section and changelog. Unit session-recovery (bd75ffc): stale-session detection, serialized reconnect with one read retry, writes reconnect without replay, EnsureConnected for opcua_connect, generation-tagged state forwarding (also fixes opcua_disconnect being undone by ReconnectWatcher), subscriptions restored after recovery. A rapid property test caught a concurrency defect (transient 'not connected' during reconnect), fixed before commit. Results: 312 unit tests pass with -race, 11/11 integration tests pass against the real test server, vet/gofmt/golint clean. Commits are local only, not pushed."
+**Context**: Construction (both units) and Build and Test complete
+
+---
+
+## Commits Split and Pushed
+**Timestamp**: 2026-10-28T16:10:00Z
+**User Input**: "push, split to logical chunks"
+**AI Response**: "Rebuilt the unpushed session-recovery commit (bd75ffc) as four commits, each building and passing go test -race plus the integration suite: e655086 fix (opcua_disconnect undone by ReconnectWatcher; connection lifecycle groundwork), 20ac8bf feat (stale-session recovery), 00f5d00 feat (opcua_connect health check), f88e550 docs. Final code matches bd75ffc except that the connection lifecycle helpers live in client.go and their tests in connection_test.go. Pushed with 104a989 and bb7fef8 unchanged."
+**Context**: Delivery
+
+---
