@@ -90,6 +90,36 @@ func TestValidate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "encrypted channel without client certificate",
+			config: &Config{
+				Server: ServerConfig{
+					Transport: "http",
+				},
+				OPCUA: OPCUAConfig{
+					AuthMode:       "anonymous",
+					SecurityPolicy: "Basic256Sha256",
+					SecurityMode:   "SignAndEncrypt",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "encrypted channel with anonymous auth",
+			config: &Config{
+				Server: ServerConfig{
+					Transport: "http",
+				},
+				OPCUA: OPCUAConfig{
+					AuthMode:       "anonymous",
+					CertFile:       "/certs/tls.crt",
+					KeyFile:        "/certs/tls.key",
+					SecurityPolicy: "Basic256Sha256",
+					SecurityMode:   "SignAndEncrypt",
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "invalid transport",
 			config: &Config{
 				Server: ServerConfig{

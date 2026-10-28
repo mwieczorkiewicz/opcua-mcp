@@ -24,9 +24,12 @@ itself.
   you're running a local/test OPC-UA server.
 - `OPCUA_AUTH_MODE` (optional): `anonymous` (default), `username`, or `certificate`.
 - `OPCUA_USERNAME` / `OPCUA_PASSWORD` (optional): required if `OPCUA_AUTH_MODE=username`.
-- `OPCUA_CERT_FILE` / `OPCUA_KEY_FILE` (optional): required if `OPCUA_AUTH_MODE=certificate`.
+- `OPCUA_CERT_FILE` / `OPCUA_KEY_FILE` (optional): PEM client certificate and RSA key; required if
+  `OPCUA_AUTH_MODE=certificate` or the security policy/mode is not `None`.
 - `OPCUA_SECURITY_POLICY` / `OPCUA_SECURITY_MODE` (optional): OPC-UA transport security, default
-  `None` / `None`. Set to e.g. `Basic256Sha256` / `SignAndEncrypt` for an encrypted connection.
+  `None` / `None`. Set to e.g. `Basic256Sha256` / `SignAndEncrypt` for an encrypted connection; works
+  with any auth mode (e.g. anonymous over an encrypted channel). The server certificate is fetched
+  via `GetEndpoints`, or pinned with `OPCUA_SERVER_CERT`.
 - `SERVER_TRANSPORT` (optional): `stdio` (default, for local MCP clients) or `http` (for
   remote/hosted deployments, listens on `SERVER_HTTP_PORT`, default `8080`).
 - `DO_NOT_TRACK` / `OPCUA_MCP_TELEMETRY` (optional): set `DO_NOT_TRACK=1` or

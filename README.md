@@ -125,8 +125,8 @@ server:
 | `OPCUA_ENDPOINT` | `opc.tcp://localhost:4840` | Server endpoint |
 | `OPCUA_AUTH_MODE` | `anonymous` | `anonymous`, `username`, or `certificate` |
 | `OPCUA_USERNAME` / `OPCUA_PASSWORD` | - | Required if `AUTH_MODE=username` |
-| `OPCUA_CERT_FILE` / `OPCUA_KEY_FILE` | - | Required if `AUTH_MODE=certificate` |
-| `OPCUA_SERVER_CERT` | - | Server certificate file path |
+| `OPCUA_CERT_FILE` / `OPCUA_KEY_FILE` | - | PEM client certificate/RSA key. Required if `AUTH_MODE=certificate` or security policy/mode is not `None` (secures the channel for any auth mode) |
+| `OPCUA_SERVER_CERT` | - | Optional pinned server certificate (PEM or DER); the connection is refused if the endpoint's certificate differs. Without it the certificate is taken from `GetEndpoints` |
 | `OPCUA_SECURITY_POLICY` | `None` | `None`, `Basic128Rsa15`, `Basic256`, `Basic256Sha256`, `Aes128_Sha256_RsaOaep` |
 | `OPCUA_SECURITY_MODE` | `None` | `None`, `Sign`, `SignAndEncrypt` |
 | `OPCUA_REQUEST_TIMEOUT` | `30s` | Per-request timeout |

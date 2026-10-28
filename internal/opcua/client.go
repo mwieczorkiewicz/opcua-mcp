@@ -80,15 +80,6 @@ func (c *Client) Connect(ctx context.Context) error {
 		opts = append(opts, opcua.StateChangedCh(stateCh))
 	}
 
-	// Add security policy and mode
-	if c.config.SecurityPolicy != "None" {
-		opts = append(opts, opcua.SecurityPolicy(c.config.SecurityPolicy))
-	}
-
-	if c.config.SecurityMode != "None" {
-		opts = append(opts, opcua.SecurityMode(ua.MessageSecurityModeFromString(c.config.SecurityMode)))
-	}
-
 	// Add authentication based on mode
 	switch c.config.AuthMode {
 	case "anonymous":
@@ -103,6 +94,13 @@ func (c *Client) Connect(ctx context.Context) error {
 		}
 	default:
 		return fmt.Errorf("unsupported authentication mode: %s", c.config.AuthMode)
+	}
+
+	// Add secure channel settings (policy, mode, server certificate, token
+	// policy ID) from the matching endpoint; must come after the auth option
+	opts, err := c.addChannelSecurity(ctx, opts)
+	if err != nil {
+		return fmt.Errorf("failed to configure channel security: %w", err)
 	}
 
 	// Create client

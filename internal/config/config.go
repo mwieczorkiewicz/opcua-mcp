@@ -294,13 +294,15 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// Validate certificate files for certificate auth
-	if c.OPCUA.AuthMode == "certificate" {
+	// Validate certificate files for certificate auth and for any signed or
+	// encrypted secure channel (the client certificate secures the channel
+	// regardless of auth mode)
+	if c.OPCUA.AuthMode == "certificate" || c.OPCUA.SecurityPolicy != "None" || c.OPCUA.SecurityMode != "None" {
 		if c.OPCUA.CertFile == "" {
-			return &ValidationError{Field: "OPCUA_CERT_FILE", Message: "required when AUTH_MODE is 'certificate'"}
+			return &ValidationError{Field: "OPCUA_CERT_FILE", Message: "required when AUTH_MODE is 'certificate' or SECURITY_POLICY/SECURITY_MODE is not 'None'"}
 		}
 		if c.OPCUA.KeyFile == "" {
-			return &ValidationError{Field: "OPCUA_KEY_FILE", Message: "required when AUTH_MODE is 'certificate'"}
+			return &ValidationError{Field: "OPCUA_KEY_FILE", Message: "required when AUTH_MODE is 'certificate' or SECURITY_POLICY/SECURITY_MODE is not 'None'"}
 		}
 	}
 
