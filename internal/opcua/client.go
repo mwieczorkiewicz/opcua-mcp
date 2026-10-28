@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gopcua/opcua"
@@ -44,6 +45,21 @@ type Client struct {
 	config    *config.OPCUAConfig // immutable post-construction; not guarded by mu
 	connected bool
 	stateCh   chan<- opcua.ConnState // registered via SetStateChangeChannel; nil unless a caller (ReconnectWatcher) wants state-change notifications
+
+	// connectMu serializes every connect, reconnect and disconnect.
+	// Never acquired while holding mu.
+	connectMu sync.Mutex
+	// connGen is bumped each time a connection is started or retired;
+	// stateForwarder drops state changes from any older generation.
+	connGen atomic.Uint64
+	// clientGen is the generation of client (guarded by mu, set together
+	// with it).
+	clientGen uint64
+
+	// dial creates and connects the underlying client for a new connection
+	// generation. nil means dialGopcua; tests set it to hand out mocks so
+	// reconnects can be exercised without a server.
+	dial func(ctx context.Context, gen uint64) (opcuaClient, error)
 }
 
 // snapshot returns a consistent read of the current client/connected state.
@@ -62,6 +78,86 @@ func NewClient(cfg *config.OPCUAConfig) *Client {
 
 // Connect establishes a connection to the OPC-UA server
 func (c *Client) Connect(ctx context.Context) error {
+	c.connectMu.Lock()
+	defer c.connectMu.Unlock()
+	return c.connectLocked(ctx)
+}
+
+// connectLocked retires the current connection (if any) and establishes a
+// new one with the configured auth, certificates and channel security.
+// Caller must hold connectMu.
+//
+// The previous connection stays published while the new one is dialed, so
+// concurrent callers keep using it rather than seeing a transient "not
+// connected"; it is swapped out and closed only once the new connection is
+// ready or the dial has failed.
+func (c *Client) connectLocked(ctx context.Context) error {
+	gen := c.connGen.Add(1)
+
+	dial := c.dial
+	if dial == nil {
+		dial = c.dialGopcua
+	}
+	client, err := dial(ctx, gen)
+
+	c.mu.Lock()
+	old := c.client
+	c.clientGen = gen
+	if err != nil {
+		c.client = nil
+		c.connected = false
+	} else {
+		c.client = client
+		c.connected = true
+	}
+	c.mu.Unlock()
+
+	if old != nil {
+		c.closeRetired(ctx, old)
+	}
+	return err
+}
+
+// defaultCloseTimeout bounds closing a retired connection when no request
+// timeout is configured.
+const defaultCloseTimeout = 5 * time.Second
+
+// requestTimeout returns the configured OPC-UA request timeout, or
+// defaultCloseTimeout if none is set.
+func (c *Client) requestTimeout() time.Duration {
+	if c.config != nil && c.config.RequestTimeout > 0 {
+		return c.config.RequestTimeout
+	}
+	return defaultCloseTimeout
+}
+
+// closeRetired closes a connection that has been replaced or abandoned,
+// bounded by the request timeout even if ctx is already cancelled. Its
+// state changes are already dropped by stateForwarder.
+func (c *Client) closeRetired(ctx context.Context, old opcuaClient) {
+	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.requestTimeout())
+	defer cancel()
+	if err := old.Close(closeCtx); err != nil {
+		logger.Debug("closing retired OPC-UA connection failed", "error", err)
+	}
+}
+
+// stateForwarder returns a gopcua StateChangedFunc that forwards state
+// changes to ch only while gen is still the live connection. Once a
+// connection is retired (deliberate disconnect or reconnect), its states -
+// in particular the Closed its Close() emits - are dropped.
+func (c *Client) stateForwarder(gen uint64, ch chan<- opcua.ConnState) func(opcua.ConnState) {
+	return func(state opcua.ConnState) {
+		if c.connGen.Load() != gen {
+			return
+		}
+		ch <- state
+	}
+}
+
+// dialGopcua creates and connects a gopcua client for connection
+// generation gen.
+func (c *Client) dialGopcua(ctx context.Context, gen uint64) (opcuaClient, error) {
 	// Create endpoint URL
 	endpoint := c.config.Endpoint
 
@@ -71,15 +167,17 @@ func (c *Client) Connect(ctx context.Context) error {
 		opcua.SessionTimeout(c.config.SessionTimeout),
 	}
 
-	// Include the registered state-change channel (if any) on every
+	// Forward state changes to the registered channel (if any) on every
 	// (re)connect - Connect always constructs a brand-new underlying gopcua
-	// client, so gopcua's StateChangedCh option must be supplied again each
-	// time rather than just once at initial construction.
+	// client, so the option must be supplied again each time. The forwarder
+	// is tied to this connection's generation, so the Closed state a
+	// deliberate Close() emits later is dropped rather than read as a
+	// permanent death by ReconnectWatcher.
 	c.mu.RLock()
 	stateCh := c.stateCh
 	c.mu.RUnlock()
 	if stateCh != nil {
-		opts = append(opts, opcua.StateChangedCh(stateCh))
+		opts = append(opts, opcua.StateChangedFunc(c.stateForwarder(gen, stateCh)))
 	}
 
 	// Add authentication based on mode
@@ -92,23 +190,23 @@ func (c *Client) Connect(ctx context.Context) error {
 		var err error
 		opts, err = c.addCertificateAuth(opts)
 		if err != nil {
-			return fmt.Errorf("failed to add certificate authentication: %w", err)
+			return nil, fmt.Errorf("failed to add certificate authentication: %w", err)
 		}
 	default:
-		return fmt.Errorf("unsupported authentication mode: %s", c.config.AuthMode)
+		return nil, fmt.Errorf("unsupported authentication mode: %s", c.config.AuthMode)
 	}
 
 	// Add secure channel settings (policy, mode, server certificate, token
 	// policy ID) from the matching endpoint; must come after the auth option
 	opts, err := c.addChannelSecurity(ctx, opts)
 	if err != nil {
-		return fmt.Errorf("failed to configure channel security: %w", err)
+		return nil, fmt.Errorf("failed to configure channel security: %w", err)
 	}
 
 	// Create client
 	client, err := opcua.NewClient(endpoint, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to create OPC-UA client: %w", err)
+		return nil, fmt.Errorf("failed to create OPC-UA client: %w", err)
 	}
 
 	// Connect with retry logic
@@ -118,16 +216,12 @@ func (c *Client) Connect(ctx context.Context) error {
 				time.Sleep(c.config.RetryDelay)
 				continue
 			}
-			return fmt.Errorf("failed to connect to OPC-UA server after %d attempts: %w", c.config.MaxRetries, err)
+			return nil, fmt.Errorf("failed to connect to OPC-UA server after %d attempts: %w", c.config.MaxRetries, err)
 		}
 		break
 	}
 
-	c.mu.Lock()
-	c.client = client
-	c.connected = true
-	c.mu.Unlock()
-	return nil
+	return client, nil
 }
 
 // addCertificateAuth adds certificate-based authentication to the client options
@@ -180,14 +274,22 @@ func (c *Client) Subscribe(ctx context.Context, params *opcua.SubscriptionParame
 	return sub, nil
 }
 
-// Disconnect closes the connection to the OPC-UA server
+// Disconnect closes the connection to the OPC-UA server. The connection is
+// retired first, so ReconnectWatcher doesn't read the Closed state that
+// Close() emits as a permanent death and bring the connection back: a
+// user-initiated disconnect stays disconnected.
 func (c *Client) Disconnect(ctx context.Context) error {
+	c.connectMu.Lock()
+	defer c.connectMu.Unlock()
+
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.client != nil && c.connected {
-		err := c.client.Close(ctx)
-		c.connected = false
-		return err
+	client, connected := c.client, c.connected
+	c.clientGen = c.connGen.Add(1)
+	c.connected = false
+	c.mu.Unlock()
+
+	if client != nil && connected {
+		return client.Close(ctx)
 	}
 	return nil
 }

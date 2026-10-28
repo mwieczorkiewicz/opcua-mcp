@@ -16,6 +16,9 @@ type mockOpcuaClient struct {
 	browseFunc     func(ctx context.Context, req *ua.BrowseRequest) (*ua.BrowseResponse, error)
 	browseNextFunc func(ctx context.Context, req *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error)
 	subscribeFunc  func(ctx context.Context, params *opcua.SubscriptionParameters, notifyCh chan<- *opcua.PublishNotificationData) (*opcua.Subscription, error)
+	// closeCalls counts Close() calls, to assert a retired connection is
+	// closed.
+	closeCalls int
 
 	readCalls       int
 	writeCalls      int
@@ -25,7 +28,10 @@ type mockOpcuaClient struct {
 }
 
 func (m *mockOpcuaClient) Connect(ctx context.Context) error { return nil }
-func (m *mockOpcuaClient) Close(ctx context.Context) error   { return nil }
+func (m *mockOpcuaClient) Close(ctx context.Context) error {
+	m.closeCalls++
+	return nil
+}
 
 func (m *mockOpcuaClient) Read(ctx context.Context, req *ua.ReadRequest) (*ua.ReadResponse, error) {
 	m.readCalls++
