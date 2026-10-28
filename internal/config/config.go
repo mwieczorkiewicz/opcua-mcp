@@ -83,6 +83,13 @@ type MCPConfig struct {
 
 	// HTTP endpoint path
 	HTTPPath string `mapstructure:"http_path"`
+
+	// ReadOnly hides and rejects every tool not classified read-only
+	// (internal/mcp's readOnlyTools), plus anything named in AllowedTools.
+	ReadOnly bool `mapstructure:"read_only"`
+	// AllowedTools is a comma-separated list of extra tool names exposed in
+	// read-only mode. It has no effect unless ReadOnly is set.
+	AllowedTools string `mapstructure:"allowed_tools"`
 }
 
 // SearchConfig holds search and discovery configuration
@@ -224,6 +231,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("mcp.enable_resources", true)
 	v.SetDefault("mcp.enable_prompts", false)
 	v.SetDefault("mcp.http_path", "/mcp")
+	v.SetDefault("mcp.read_only", false)
+	v.SetDefault("mcp.allowed_tools", "")
 
 	v.SetDefault("search.enable_discovery", true)
 	v.SetDefault("search.discovery_interval", 30*time.Second)

@@ -79,6 +79,20 @@ subscription manager, and discovery index fit together.
 | `opcua_force_discovery` | Trigger an immediate discovery refresh instead of waiting for the next cycle. |
 | `opcua_debug_search` / `opcua_ensure_server_nodes` | Diagnostics for troubleshooting why a node isn't showing up in search. |
 
+### Read-only mode
+
+Set `MCP_READ_ONLY=true` to expose only tools that don't change anything on
+the OPC-UA server or the connection: `opcua_write`, `opcua_disconnect`,
+`opcua_subscribe` and `opcua_unsubscribe` are hidden from `tools/list`, and a
+client that calls one of them by name gets an error instead of running it.
+`opcua_connect` and the discovery tools stay available.
+
+To approve specific tools on top of the read-only set, list them in
+`MCP_ALLOWED_TOOLS`, for example `MCP_ALLOWED_TOOLS=opcua_subscribe,opcua_unsubscribe`.
+An unknown tool name stops the server at startup, so a typo can't silently
+leave a tool disabled. Any tool added in a future release is excluded from
+read-only mode until it is classified as read-only.
+
 ## MCP resources
 
 | Resource | Description |
@@ -144,6 +158,8 @@ server:
 | `MCP_ENABLE_RESOURCES` | `true` | Enable resources |
 | `MCP_ENABLE_PROMPTS` | `false` | Enable prompts |
 | `MCP_HTTP_PATH` | `/mcp` | HTTP endpoint path |
+| `MCP_READ_ONLY` | `false` | Expose only read-only tools (see [Read-only mode](#read-only-mode)) |
+| `MCP_ALLOWED_TOOLS` | _(empty)_ | Comma-separated tools to expose in addition to the read-only set; ignored unless `MCP_READ_ONLY=true` |
 
 ### Discovery and search
 
@@ -232,6 +248,15 @@ live/simulated server - see [docs/architecture.md](docs/architecture.md) for
 how the pieces being tested fit together, and
 [docs/COMMIT_CONVENTION.md](docs/COMMIT_CONVENTION.md) for this repo's
 commit message format.
+
+## Changelog
+
+### Unreleased
+
+- **New: read-only mode.** `MCP_READ_ONLY=true` hides and rejects
+  `opcua_write`, `opcua_disconnect`, `opcua_subscribe` and
+  `opcua_unsubscribe`; `MCP_ALLOWED_TOOLS` re-enables named tools. Off by
+  default, so existing setups see all 18 tools as before.
 
 ## Contributing
 

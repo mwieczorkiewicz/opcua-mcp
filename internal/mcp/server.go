@@ -48,6 +48,13 @@ type Server struct {
 	// stdio mode.
 	httpServerMu sync.Mutex
 	httpServer   *server.StreamableHTTPServer
+
+	// toolNames records every tool SetupTools registers, in order; toolPolicy
+	// is built from it at the end of SetupTools and decides which of those
+	// tools are exposed (see tool_policy.go). A nil toolPolicy allows
+	// everything, which is the state before SetupTools runs.
+	toolNames  []string
+	toolPolicy *toolPolicy
 }
 
 // NewServer creates a new MCP server with OPC-UA capabilities. cachingClient
@@ -86,6 +93,11 @@ func NewServer(cfg *config.Config, opcuaClient *opcua.Client, cachingClient *opc
 		server.WithLogging(),
 		server.WithRecovery(),
 		server.WithToolHandlerMiddleware(srv.telemetryMiddleware),
+		// Registered after telemetry so telemetry wraps it and denied calls
+		// are still counted (mcp-go applies the first-registered middleware
+		// outermost).
+		server.WithToolHandlerMiddleware(srv.toolPolicyMiddleware),
+		server.WithToolFilter(srv.toolPolicyFilter),
 	)
 
 	// Create discovery service
@@ -123,7 +135,7 @@ func (s *Server) SetupTools() error {
 			mcp.DefaultNumber(0),
 		),
 	)
-	s.mcpServer.AddTool(readTool, s.handleRead)
+	s.addTool(readTool, s.handleRead)
 
 	// Write tool
 	writeTool := mcp.NewTool("opcua_write",
@@ -137,7 +149,7 @@ func (s *Server) SetupTools() error {
 			mcp.Description("Value to write (JSON format). Supports: booleans (true/false), integers, floats, strings, arrays, and DateTime values"),
 		),
 	)
-	s.mcpServer.AddTool(writeTool, s.handleWrite)
+	s.addTool(writeTool, s.handleWrite)
 
 	// Browse tool
 	browseTool := mcp.NewTool("opcua_browse",
@@ -147,7 +159,7 @@ func (s *Server) SetupTools() error {
 			mcp.DefaultString("i=85"), // Objects folder
 		),
 	)
-	s.mcpServer.AddTool(browseTool, s.handleBrowse)
+	s.addTool(browseTool, s.handleBrowse)
 
 	// Get node info tool
 	nodeInfoTool := mcp.NewTool("opcua_node_info",
@@ -157,25 +169,25 @@ func (s *Server) SetupTools() error {
 			mcp.Description("Node ID to get information for"),
 		),
 	)
-	s.mcpServer.AddTool(nodeInfoTool, s.handleNodeInfo)
+	s.addTool(nodeInfoTool, s.handleNodeInfo)
 
 	// Server info tool
 	serverInfoTool := mcp.NewTool("opcua_server_info",
 		mcp.WithDescription("Get OPC-UA server information"),
 	)
-	s.mcpServer.AddTool(serverInfoTool, s.handleServerInfo)
+	s.addTool(serverInfoTool, s.handleServerInfo)
 
 	// Connect tool
 	connectTool := mcp.NewTool("opcua_connect",
 		mcp.WithDescription("Connect to OPC-UA server"),
 	)
-	s.mcpServer.AddTool(connectTool, s.handleConnect)
+	s.addTool(connectTool, s.handleConnect)
 
 	// Disconnect tool
 	disconnectTool := mcp.NewTool("opcua_disconnect",
 		mcp.WithDescription("Disconnect from OPC-UA server"),
 	)
-	s.mcpServer.AddTool(disconnectTool, s.handleDisconnect)
+	s.addTool(disconnectTool, s.handleDisconnect)
 
 	// Get value by node ID tool
 	getValueTool := mcp.NewTool("opcua_get_value",
@@ -185,7 +197,7 @@ func (s *Server) SetupTools() error {
 			mcp.Description("Node ID of the variable to read"),
 		),
 	)
-	s.mcpServer.AddTool(getValueTool, s.handleGetValue)
+	s.addTool(getValueTool, s.handleGetValue)
 
 	// Browse nodes tool
 	browseNodesTool := mcp.NewTool("opcua_browse_nodes",
@@ -201,7 +213,7 @@ func (s *Server) SetupTools() error {
 			mcp.Max(10),
 		),
 	)
-	s.mcpServer.AddTool(browseNodesTool, s.handleBrowseNodes)
+	s.addTool(browseNodesTool, s.handleBrowseNodes)
 
 	// Get value by browse name tool
 	getValueByNameTool := mcp.NewTool("opcua_get_value_by_name",
@@ -211,7 +223,7 @@ func (s *Server) SetupTools() error {
 			mcp.Description("Browse name of the variable to read"),
 		),
 	)
-	s.mcpServer.AddTool(getValueByNameTool, s.handleGetValueByName)
+	s.addTool(getValueByNameTool, s.handleGetValueByName)
 
 	// Find similar nodes tool
 	findSimilarNodesTool := mcp.NewTool("opcua_find_similar_nodes",
@@ -227,7 +239,7 @@ func (s *Server) SetupTools() error {
 			mcp.Max(100),
 		),
 	)
-	s.mcpServer.AddTool(findSimilarNodesTool, s.handleFindSimilarNodes)
+	s.addTool(findSimilarNodesTool, s.handleFindSimilarNodes)
 
 	// Debug search tool
 	debugSearchTool := mcp.NewTool("opcua_debug_search",
@@ -237,25 +249,25 @@ func (s *Server) SetupTools() error {
 			mcp.Description("Browse name to debug search for"),
 		),
 	)
-	s.mcpServer.AddTool(debugSearchTool, s.handleDebugSearch)
+	s.addTool(debugSearchTool, s.handleDebugSearch)
 
 	// Discovery stats tool
 	discoveryStatsTool := mcp.NewTool("opcua_discovery_stats",
 		mcp.WithDescription("Get discovery service statistics"),
 	)
-	s.mcpServer.AddTool(discoveryStatsTool, s.handleDiscoveryStats)
+	s.addTool(discoveryStatsTool, s.handleDiscoveryStats)
 
 	// Force discovery refresh tool
 	forceDiscoveryTool := mcp.NewTool("opcua_force_discovery",
 		mcp.WithDescription("Force an immediate discovery refresh"),
 	)
-	s.mcpServer.AddTool(forceDiscoveryTool, s.handleForceDiscovery)
+	s.addTool(forceDiscoveryTool, s.handleForceDiscovery)
 
 	// Ensure Server nodes indexed tool
 	ensureServerNodesTool := mcp.NewTool("opcua_ensure_server_nodes",
 		mcp.WithDescription("Ensure critical Server nodes are properly indexed"),
 	)
-	s.mcpServer.AddTool(ensureServerNodesTool, s.handleEnsureServerNodes)
+	s.addTool(ensureServerNodesTool, s.handleEnsureServerNodes)
 
 	// Subscribe tool
 	subscribeTool := mcp.NewTool("opcua_subscribe",
@@ -269,7 +281,7 @@ func (s *Server) SetupTools() error {
 			mcp.Description("Publishing interval in milliseconds"),
 		),
 	)
-	s.mcpServer.AddTool(subscribeTool, s.handleSubscribe)
+	s.addTool(subscribeTool, s.handleSubscribe)
 
 	// Unsubscribe tool
 	unsubscribeTool := mcp.NewTool("opcua_unsubscribe",
@@ -281,13 +293,21 @@ func (s *Server) SetupTools() error {
 			mcp.Description("Node IDs whose subscription group(s) should be cancelled - provide this or subscription_id, not both"),
 		),
 	)
-	s.mcpServer.AddTool(unsubscribeTool, s.handleUnsubscribe)
+	s.addTool(unsubscribeTool, s.handleUnsubscribe)
 
 	// List subscriptions tool
 	listSubscriptionsTool := mcp.NewTool("opcua_list_subscriptions",
 		mcp.WithDescription("List all active push-based subscriptions, reflecting persisted intent even immediately after a server restart, before re-subscription completes."),
 	)
-	s.mcpServer.AddTool(listSubscriptionsTool, s.handleListSubscriptions)
+	s.addTool(listSubscriptionsTool, s.handleListSubscriptions)
+
+	// Built from the names registered above, so allowlist validation can
+	// never drift from the actual tool set.
+	policy, err := newToolPolicy(s.config.MCP.ReadOnly, s.config.MCP.AllowedTools, s.toolNames)
+	if err != nil {
+		return err
+	}
+	s.toolPolicy = policy
 
 	return nil
 }
@@ -1297,4 +1317,11 @@ func (s *Server) shutdown() {
 		}
 		s.telemetry.Close()
 	})
+}
+
+// addTool registers a tool with the MCP server and records its name for
+// toolPolicy's allowlist validation.
+func (s *Server) addTool(tool mcp.Tool, handler server.ToolHandlerFunc) {
+	s.mcpServer.AddTool(tool, handler)
+	s.toolNames = append(s.toolNames, tool.Name)
 }

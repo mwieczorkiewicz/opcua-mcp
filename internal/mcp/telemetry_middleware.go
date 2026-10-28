@@ -70,7 +70,7 @@ func classifyErrorText(text string) string {
 		return telemetry.ErrKindInvalidArgument
 	case strings.Contains(lower, "not found"), strings.Contains(lower, "no results returned"):
 		return telemetry.ErrKindNotFound
-	case strings.Contains(lower, "not writable"), strings.Contains(lower, "not user writable"), strings.Contains(lower, "permission"):
+	case strings.Contains(lower, "not writable"), strings.Contains(lower, "not user writable"), strings.Contains(lower, "permission"), strings.Contains(lower, "disabled in read-only mode"):
 		return telemetry.ErrKindPermissionDenied
 	case strings.Contains(lower, "unavailable"):
 		return telemetry.ErrKindUnavailable

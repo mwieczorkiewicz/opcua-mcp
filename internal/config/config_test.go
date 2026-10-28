@@ -282,6 +282,7 @@ func TestDefaultValues(t *testing.T) {
 		"OPCUA_ENDPOINT", "OPCUA_AUTH_MODE", "OPCUA_SECURITY_POLICY", "OPCUA_SECURITY_MODE",
 		"OPCUA_REQUEST_TIMEOUT", "OPCUA_SESSION_TIMEOUT", "OPCUA_MAX_RETRIES", "OPCUA_RETRY_DELAY",
 		"MCP_NAME", "MCP_VERSION", "MCP_ENABLE_TOOLS", "MCP_ENABLE_RESOURCES", "MCP_ENABLE_PROMPTS", "MCP_HTTP_PATH",
+		"MCP_READ_ONLY", "MCP_ALLOWED_TOOLS",
 	}
 
 	for _, envVar := range envVars {
@@ -346,6 +347,12 @@ func TestDefaultValues(t *testing.T) {
 	if cfg.MCP.HTTPPath != "/mcp" {
 		t.Errorf("Expected default HTTP path '/mcp', got '%s'", cfg.MCP.HTTPPath)
 	}
+	if cfg.MCP.ReadOnly {
+		t.Errorf("Expected default read-only false, got %v", cfg.MCP.ReadOnly)
+	}
+	if cfg.MCP.AllowedTools != "" {
+		t.Errorf("Expected default allowed tools empty, got '%s'", cfg.MCP.AllowedTools)
+	}
 	if cfg.Store.DBPath != "mcp_opcua_store.db" {
 		t.Errorf("Expected default store DB path 'mcp_opcua_store.db', got '%s'", cfg.Store.DBPath)
 	}
@@ -366,5 +373,42 @@ func TestDefaultValues(t *testing.T) {
 	}
 	if cfg.Store.NotifyChanBuffer != 1024 {
 		t.Errorf("Expected default store notify chan buffer 1024, got %d", cfg.Store.NotifyChanBuffer)
+	}
+}
+
+// TestReadOnlyEnvVars covers MCP_READ_ONLY/MCP_ALLOWED_TOOLS loading through
+// the same env-var path as every other MCP_* setting.
+func TestReadOnlyEnvVars(t *testing.T) {
+	tests := []struct {
+		name         string
+		readOnly     string
+		allowedTools string
+		wantReadOnly bool
+		wantAllowed  string
+	}{
+		{name: "unset", wantReadOnly: false, wantAllowed: ""},
+		{name: "read-only only", readOnly: "true", wantReadOnly: true, wantAllowed: ""},
+		{name: "read-only with allowlist", readOnly: "true", allowedTools: "opcua_write, opcua_subscribe", wantReadOnly: true, wantAllowed: "opcua_write, opcua_subscribe"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.readOnly != "" {
+				t.Setenv("MCP_READ_ONLY", tt.readOnly)
+			}
+			if tt.allowedTools != "" {
+				t.Setenv("MCP_ALLOWED_TOOLS", tt.allowedTools)
+			}
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() error: %v", err)
+			}
+			if cfg.MCP.ReadOnly != tt.wantReadOnly {
+				t.Errorf("ReadOnly = %v, want %v", cfg.MCP.ReadOnly, tt.wantReadOnly)
+			}
+			if cfg.MCP.AllowedTools != tt.wantAllowed {
+				t.Errorf("AllowedTools = %q, want %q", cfg.MCP.AllowedTools, tt.wantAllowed)
+			}
+		})
 	}
 }
